@@ -1,0 +1,7 @@
+google-genai
+python-dotenv
+certifi
+faster-whisper
+sounddevice
+ddgs
+playwright

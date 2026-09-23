@@ -1,0 +1,8 @@
+venv/
+.env
+__pycache__/
+*.pyc
+memory.json
+search_usage.json
+search_mode.json
+search.log
