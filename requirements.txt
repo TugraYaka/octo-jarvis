@@ -1,6 +1,8 @@
 google-genai
 python-dotenv
 certifi
+httpx
+numpy
 faster-whisper
 sounddevice
 ddgs

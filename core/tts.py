@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import tempfile
 import urllib.request
@@ -28,4 +29,7 @@ def speak(text: str, lang: str = "tr") -> None:
         tmp.write(audio)
         out_path = tmp.name
 
-    subprocess.run(["afplay", out_path], check=True)
+    try:
+        subprocess.run(["afplay", out_path], check=True)
+    finally:
+        os.remove(out_path)

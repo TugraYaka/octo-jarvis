@@ -147,14 +147,28 @@ class BrowserSession:
 
         return {"url": page.url, "title": title, "text": body_text, "links": clean_links}
 
+    def _snapshot_settled(self) -> dict:
+        """Snapshot the page, retrying once if JS-rendered content hasn't landed yet.
+
+        Many sites (e.g. YouTube) report domcontentloaded before their JS framework
+        has actually painted the list/content the model needs - a bare snapshot right
+        after navigation can come back empty.
+        """
+        snapshot = self._snapshot()
+        if not snapshot["text"] and not snapshot["links"]:
+            self._page.wait_for_timeout(1500)
+            snapshot = self._snapshot()
+        return snapshot
+
     def open(self, url: str) -> dict:
         _assert_url_allowed(url)
         page = self._ensure_page()
         page.goto(url, wait_until="domcontentloaded")
+        _assert_url_allowed(page.url)
         if _looks_like_challenge(page.title()):
             page.wait_for_timeout(4000)  # let Cloudflare/anti-bot JS challenge resolve
         _log(f"[browser] open {url!r} -> {page.url!r}")
-        return self._snapshot()
+        return self._snapshot_settled()
 
     def click(self, target_text: str) -> dict:
         if self._page is None:
@@ -163,8 +177,9 @@ class BrowserSession:
         locator = page.get_by_text(target_text, exact=False).first
         locator.click(timeout=NAV_TIMEOUT_MS)
         page.wait_for_load_state("domcontentloaded", timeout=NAV_TIMEOUT_MS)
+        _assert_url_allowed(page.url)
         _log(f"[browser] click {target_text!r} -> {page.url!r}")
-        return self._snapshot()
+        return self._snapshot_settled()
 
     def scroll(self, direction: str) -> dict:
         if self._page is None:
