@@ -3,11 +3,13 @@ import re
 
 from ddgs import DDGS
 
+from core import paths
+
 MAX_RESULTS = 3
 TIMEOUT = 5
 BACKENDS = ("brave", "duckduckgo")
 
-LOG_PATH = os.path.join(os.path.dirname(__file__), "..", "search.log")
+LOG_PATH = paths.SEARCH_LOG
 
 _INJECTION_PATTERNS = [
     re.compile(p, re.IGNORECASE) for p in (
@@ -31,6 +33,7 @@ def _looks_like_injection(text: str) -> bool:
 
 def _log(message: str) -> None:
     try:
+        os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
         with open(LOG_PATH, "a", encoding="utf-8") as f:
             f.write(f"{message}\n")
     except OSError:

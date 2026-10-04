@@ -1,0 +1,132 @@
+import os
+import shutil
+import subprocess
+import sys
+import time
+from typing import Callable, NamedTuple
+
+from core import config, paths
+
+BASE_MODEL = "tts_models/multilingual/multi-dataset/xtts_v2"
+PYTHON_VERSION = "3.11"
+MIN_FREE_GB = 8
+INSTALLED_MARKER = os.path.join(paths.TTS_DIR, ".installed")
+DOWNLOAD_NOTICE = (
+    "The voice server needs Python 3.11, PyTorch and the XTTS v2 voice model "
+    "(roughly 3-5 GB of downloads). XTTS v2 is licensed under the Coqui Public Model "
+    "License (non-commercial use only); installing it means you accept that license."
+)
+
+
+class Runtime(NamedTuple):
+    python: str
+    owned: bool
+
+
+def find_runtime() -> Runtime | None:
+    override = os.environ.get("JARVIS_TTS_PYTHON")
+    if override and os.path.isfile(override):
+        return Runtime(override, False)
+    owned = paths.venv_python(paths.TTS_VENV_DIR)
+    if os.path.isfile(owned) and os.path.isfile(INSTALLED_MARKER):
+        return Runtime(owned, True)
+    legacy = paths.venv_python(os.path.join(os.path.dirname(paths.SOURCE_ROOT), "venv_tts"))
+    if os.path.isfile(legacy):
+        return Runtime(legacy, False)
+    return None
+
+
+def is_installed() -> bool:
+    return find_runtime() is not None
+
+
+def assets_dir() -> str:
+    return (
+        os.environ.get("JARVIS_ASSETS_DIR")
+        or config.get("assets_dir")
+        or paths.DEFAULT_ASSETS_DIR
+    )
+
+
+def server_env(runtime: Runtime) -> dict:
+    env = {
+        "JARVIS_ASSETS_DIR": assets_dir(),
+        "COQUI_TOS_AGREED": "1",
+        "PYTHONUNBUFFERED": "1",
+    }
+    if runtime.owned:
+        env["TTS_HOME"] = paths.TTS_HOME
+    return env
+
+
+def _run(cmd: list, progress: Callable[[str], None], env: dict) -> None:
+    proc = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        encoding="utf-8", errors="replace", env={**os.environ, **env},
+    )
+    tail: list = []
+    for line in proc.stdout:
+        line = line.rstrip()
+        if not line:
+            continue
+        tail = (tail + [line])[-12:]
+        progress(line[:140])
+    if proc.wait() != 0:
+        raise RuntimeError("Command failed:\n" + "\n".join(tail))
+
+
+def install(progress: Callable[[str], None]) -> None:
+    os.makedirs(paths.TTS_DIR, exist_ok=True)
+    free_gb = shutil.disk_usage(paths.TTS_DIR).free / 1024 ** 3
+    if free_gb < MIN_FREE_GB:
+        raise RuntimeError(f"Not enough disk space: {free_gb:.1f} GB free, {MIN_FREE_GB} GB needed.")
+
+    uv_cache = os.path.join(paths.TTS_DIR, "uv-cache")
+    uv_env = {
+        "UV_CACHE_DIR": uv_cache,
+        "UV_PYTHON_INSTALL_DIR": os.path.join(paths.TTS_DIR, "python"),
+        "NO_COLOR": "1",
+    }
+    uv = [sys.executable, "-m", "uv"]
+    try:
+        if os.path.exists(INSTALLED_MARKER):
+            os.remove(INSTALLED_MARKER)
+        shutil.rmtree(paths.TTS_VENV_DIR, ignore_errors=True)
+
+        progress(f"Creating a Python {PYTHON_VERSION} environment...")
+        _run(uv + ["venv", "--python", PYTHON_VERSION, paths.TTS_VENV_DIR], progress, uv_env)
+
+        python = paths.venv_python(paths.TTS_VENV_DIR)
+        progress("Installing PyTorch and TTS packages (this takes a while)...")
+        _run(
+            uv + ["pip", "install", "--python", python, "-r", paths.TTS_REQUIREMENTS],
+            progress, uv_env,
+        )
+
+        progress("Downloading the XTTS v2 voice model...")
+        download = (
+            "from TTS.utils.manage import ModelManager;"
+            f"ModelManager().download_model({BASE_MODEL!r})"
+        )
+        _run([python, "-c", download], progress, server_env(Runtime(python, True)))
+
+        with open(INSTALLED_MARKER, "w", encoding="utf-8") as f:
+            f.write(time.strftime("%Y-%m-%d %H:%M:%S"))
+    finally:
+        shutil.rmtree(uv_cache, ignore_errors=True)
+
+
+def uninstall() -> bool:
+    existed = os.path.isdir(paths.TTS_DIR)
+    shutil.rmtree(paths.TTS_DIR, ignore_errors=True)
+    return existed
+
+
+if __name__ == "__main__":
+    if sys.argv[1:] != ["install"]:
+        sys.exit("Usage: python -m core.ttsinstall install")
+    try:
+        install(lambda line: print(line, flush=True))
+    except Exception as e:
+        sys.exit(f"TTS install failed: {e}")
+    print("TTS server installed.")

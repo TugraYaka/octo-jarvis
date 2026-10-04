@@ -3,7 +3,8 @@ import sys
 
 from google.genai import types
 
-from core.client import client
+from core import paths
+from core.client import get_client
 
 DIM = 768
 
@@ -12,12 +13,13 @@ _TASK_TYPES = {
     "document": "RETRIEVAL_DOCUMENT",
     "query": "RETRIEVAL_QUERY",
 }
-_LOG_PATH = os.path.join(os.path.dirname(__file__), "..", "search.log")
+_LOG_PATH = paths.SEARCH_LOG
 
 
 def _log_failure(text: str, kind: str, error: Exception) -> None:
     print(f"[memory] embedding failed: {error}", file=sys.stderr)
     try:
+        os.makedirs(os.path.dirname(_LOG_PATH), exist_ok=True)
         with open(_LOG_PATH, "a", encoding="utf-8") as f:
             f.write(f"[embedding] {kind} embed failed for {text[:50]!r}: {error}\n")
     except OSError:
@@ -26,7 +28,7 @@ def _log_failure(text: str, kind: str, error: Exception) -> None:
 
 def embed(text: str, kind: str) -> list[float] | None:
     try:
-        response = client.models.embed_content(
+        response = get_client().models.embed_content(
             model=_MODEL,
             contents=text,
             config=types.EmbedContentConfig(

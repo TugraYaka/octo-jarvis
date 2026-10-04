@@ -1,7 +1,9 @@
 import json
 import os
 
-STATE_PATH = os.path.join(os.path.dirname(__file__), "..", "search_mode.json")
+from core import paths
+
+STATE_PATH = paths.SEARCH_MODE_PATH
 
 _DEFAULT_STATE = {"google": True, "duck": False}
 
@@ -21,6 +23,7 @@ def _load() -> dict:
 
 
 def _save(state: dict) -> None:
+    os.makedirs(os.path.dirname(STATE_PATH), exist_ok=True)
     tmp_path = f"{STATE_PATH}.tmp"
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(state, f)

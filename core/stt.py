@@ -1,9 +1,14 @@
+import glob
 import os
 import queue
+import threading
+
+from core import paths
+
+paths.apply_cache_env()
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 
 import numpy as np
-import sounddevice as sd
-from faster_whisper import WhisperModel
 
 SAMPLE_RATE = 16000
 BLOCK_DURATION = 0.05
@@ -17,19 +22,56 @@ TRIM_PADDING_BLOCKS = 4
 CPU_THREADS = min(10, os.cpu_count() or 4)
 LANGUAGE = "tr"
 
+def _local_model_path():
+    pattern = os.path.join(
+        os.environ["HF_HOME"], "hub", "models--Systran--faster-whisper-small", "snapshots", "*"
+    )
+    matches = glob.glob(pattern)
+    return matches[0] if matches else None
+
+
+def _import_sounddevice():
+    try:
+        import sounddevice
+    except OSError as e:
+        raise RuntimeError(
+            "Microphone support needs the PortAudio library "
+            "(Linux: sudo apt install libportaudio2)."
+        ) from e
+    return sounddevice
+
+
 _model = None
+_model_lock = threading.Lock()
 
 
 def _get_model():
     global _model
     if _model is None:
-        _model = WhisperModel(
-            "small", device="cpu", compute_type="int8", cpu_threads=CPU_THREADS
-        )
+        with _model_lock:
+            if _model is None:
+                from faster_whisper import WhisperModel
+
+                _model = WhisperModel(
+                    _local_model_path() or "small",
+                    device="cpu",
+                    compute_type="int8",
+                    cpu_threads=CPU_THREADS,
+                )
     return _model
 
 
+def is_cached() -> bool:
+    return _local_model_path() is not None
+
+
+def load() -> None:
+    _get_model()
+
+
 def warmup():
+    if not is_cached():
+        return
     model = _get_model()
     silence = np.zeros(SAMPLE_RATE, dtype=np.float32)
     list(model.transcribe(silence, language="tr", vad_filter=True, beam_size=1)[0])
@@ -44,6 +86,7 @@ def _trim(frames: list, loud_flags: list) -> np.ndarray:
 
 
 def record_until_silence() -> np.ndarray:
+    sd = _import_sounddevice()
     block_size = int(SAMPLE_RATE * BLOCK_DURATION)
     blocks: queue.Queue = queue.Queue()
 

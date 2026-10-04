@@ -5,13 +5,14 @@ from concurrent.futures import ThreadPoolExecutor
 
 try:
     import fcntl
-except ImportError:  # Windows'ta yok — kilit sessizce devre dışı kalır
+except ImportError:  # Not available on Windows — locking is silently disabled
     fcntl = None
 
+from core import paths
 from core.embeddings import embed
 
-MEMORY_PATH = os.path.join(os.path.dirname(__file__), "..", "memory.json")
-_LOG_PATH = os.path.join(os.path.dirname(__file__), "..", "search.log")
+MEMORY_PATH = paths.MEMORY_PATH
+_LOG_PATH = paths.SEARCH_LOG
 _LOCK_PATH = MEMORY_PATH + ".lock"
 
 _MAX_ENTRIES = 200
@@ -37,6 +38,7 @@ class _locked:
     """
 
     def __enter__(self):
+        os.makedirs(os.path.dirname(_LOCK_PATH), exist_ok=True)
         self._fh = open(_LOCK_PATH, "w")
         if fcntl is not None:
             fcntl.flock(self._fh, fcntl.LOCK_EX)
@@ -109,6 +111,7 @@ def _load_entries() -> list[dict]:
 
 
 def _save_entries(entries: list[dict]) -> None:
+    os.makedirs(os.path.dirname(MEMORY_PATH), exist_ok=True)
     tmp_path = f"{MEMORY_PATH}.tmp"
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(entries, f, ensure_ascii=False, indent=2)
@@ -126,8 +129,8 @@ def _do_remember(text: str, replace_id: int | None) -> None:
         if not text:
             return
 
-        # Embedding, kilit tutmadan hesaplanır — ağ çağrısı boyunca başka
-        # bir process'i beklettirmemek için.
+        # Embedding is computed without holding the lock — so another
+        # process isn't blocked during the network call.
         embedding = embed(text, "document")
         if embedding is None:
             _log(f"[memory] fact not saved (embedding failed): {text[:80]!r}")

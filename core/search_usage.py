@@ -2,7 +2,9 @@ import json
 import os
 import time
 
-USAGE_PATH = os.path.join(os.path.dirname(__file__), "..", "search_usage.json")
+from core import paths
+
+USAGE_PATH = paths.SEARCH_USAGE_PATH
 
 FREE_MONTHLY_SEARCHES = 5000
 MONTHLY_SAFETY_MARGIN = 200
@@ -28,7 +30,9 @@ def _load() -> dict:
     if os.path.exists(USAGE_PATH):
         try:
             with open(USAGE_PATH, "r", encoding="utf-8") as f:
-                data.update(json.load(f))
+                stored = json.load(f)
+            if isinstance(stored, dict):
+                data.update(stored)
         except (json.JSONDecodeError, OSError):
             pass
     if data.get("month") != _current_month():
@@ -41,6 +45,7 @@ def _load() -> dict:
 
 
 def _save(data: dict) -> None:
+    os.makedirs(os.path.dirname(USAGE_PATH), exist_ok=True)
     tmp_path = f"{USAGE_PATH}.tmp"
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(data, f)

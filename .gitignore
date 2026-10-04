@@ -1,8 +1,25 @@
 venv/
+.venv/
 .env
 __pycache__/
 *.pyc
+*.log
+.DS_Store
+
+# Runtime data normally lives in the user data folder; ignore strays
+/config.json
 memory.json
+memory.json.lock
 search_usage.json
 search_mode.json
-search.log
+tts_settings.json
+browser_profile/
+
+# Private voice data and models - never commit
+voices/
+models/
+assets/
+tr_finetuned/
+finetune_out/
+*.pth
+*.wav
