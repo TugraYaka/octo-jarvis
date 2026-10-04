@@ -1,4 +1,4 @@
-class Jarvis < Formula
+class OctoJarvis < Formula
   desc "Terminal AI assistant powered by Gemini, with optional spoken replies"
   homepage "https://github.com/TugraYaka/octo-jarvis"
   url "https://github.com/TugraYaka/octo-jarvis/archive/refs/tags/v0.2.0.tar.gz"
@@ -24,7 +24,7 @@ class Jarvis < Formula
         ~/Library/Application Support/JARVIS
       To remove JARVIS completely (including the TTS server and all its data) run:
         jarvis uninstall
-      Running only `brew uninstall jarvis` leaves that data folder behind.
+      Running only `brew uninstall octo-jarvis` leaves that data folder behind.
     EOS
   end
 

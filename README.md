@@ -19,12 +19,11 @@ JARVIS runs straight from the source code: the first launch creates its own priv
 ### macOS with Homebrew
 
 ```bash
-brew tap TugraYaka/octo-jarvis
-brew install jarvis
+brew install TugraYaka/octo-jarvis/octo-jarvis
 jarvis
 ```
 
-The formula template is in [`packaging/homebrew/jarvis.rb`](packaging/homebrew/jarvis.rb); publish it in a tap repository named `homebrew-octo-jarvis` under `Formula/`.
+After the first install (which adds the tap automatically) `brew upgrade octo-jarvis` and `brew uninstall octo-jarvis` work with the short name. The formula source is [`packaging/homebrew/octo-jarvis.rb`](packaging/homebrew/octo-jarvis.rb); it is published in the [homebrew-octo-jarvis](https://github.com/TugraYaka/homebrew-octo-jarvis) tap under `Formula/`.
 
 ### From source (macOS, Linux, Windows)
 

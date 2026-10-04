@@ -267,7 +267,7 @@ def cmd_uninstall(args):
     for rc in rc_files:
         say("  - the PATH entry JARVIS added to %s" % rc)
     if brew:
-        say("  - the Homebrew package 'jarvis'")
+        say("  - the Homebrew package 'octo-jarvis'")
     if os.path.isdir(paths.DEFAULT_ASSETS_DIR) and os.listdir(paths.DEFAULT_ASSETS_DIR):
         say("  ! Voice files in %s will be deleted too." % paths.DEFAULT_ASSETS_DIR)
     custom_assets = config.get("assets_dir")
@@ -294,7 +294,7 @@ def cmd_uninstall(args):
         _rmtree(paths.DATA_DIR)
     say("JARVIS data, TTS server and command removed.")
     if brew:
-        subprocess.call(["brew", "uninstall", "jarvis"])
+        subprocess.call(["brew", "uninstall", "octo-jarvis"])
 
 
 def cmd_tts(args):
