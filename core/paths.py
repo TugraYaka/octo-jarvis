@@ -2,7 +2,7 @@ import os
 import sys
 
 APP_NAME = "JARVIS"
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 
 IS_WIN = sys.platform == "win32"
 IS_MAC = sys.platform == "darwin"

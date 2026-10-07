@@ -2,6 +2,8 @@
 import os
 import shlex
 import shutil
+import getpass
+import glob
 import subprocess
 import sys
 
@@ -11,7 +13,7 @@ if sys.version_info < (3, 10):
 ROOT = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, ROOT)
 
-from core import config, paths, personal, ttsinstall  # noqa: E402
+from core import config, doctor, paths, personal, ttsinstall  # noqa: E402
 
 DEPS_MARKER = os.path.join(paths.VENV_DIR, ".jarvis-deps")
 RC_START = "# >>> jarvis >>>"
@@ -22,6 +24,8 @@ HELP = """JARVIS %s
 
 Usage:
   jarvis                          start the assistant
+  jarvis setup [--yes] [--with-tts]  guided first-time setup of everything
+  jarvis doctor                   check that everything works and explain what does not
   jarvis install                  make the 'jarvis' command available everywhere
   jarvis uninstall [--yes]        remove JARVIS, its TTS server and all its data
   jarvis tts install              download and install the TTS server
@@ -363,6 +367,126 @@ def cmd_personal(args):
         say("Extra packages from the personal repository are installed on the next launch.")
 
 
+def cmd_doctor():
+    py = paths.venv_python(paths.VENV_DIR)
+    ok = _venv_works(py)
+    current = ok and _read(DEPS_MARKER) == _deps_signature()
+    sys.exit(doctor.report(doctor.run_checks(py, ok, current)))
+
+
+def _ask_yes(question, auto):
+    if auto:
+        return True
+    try:
+        return input(question + " [Y/n] ").strip().lower() in ("", "y", "yes")
+    except (EOFError, KeyboardInterrupt):
+        say()
+        return False
+
+
+def _ask_text(prompt):
+    try:
+        return input(prompt).strip()
+    except (EOFError, KeyboardInterrupt):
+        say()
+        return ""
+
+
+def _setup_key(py):
+    if config.get_api_key():
+        say("Gemini API key: already set.")
+        return
+    say("A Gemini API key is needed. Create a free one at https://aistudio.google.com/apikey")
+    for _ in range(3):
+        try:
+            key = getpass.getpass("Paste your key (hidden, Enter to skip): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            say()
+            return
+        if not key:
+            say("Skipped. JARVIS will ask for it on first start.")
+            return
+        config.set_api_key(key)
+        code, message = doctor.check_key(py)
+        if code == 0:
+            say("Key accepted.")
+            return
+        if code == 2:
+            config.clear_api_key()
+            say("Google rejected that key. Try again.")
+        else:
+            say("Key saved, but it could not be verified right now (%s)." % message)
+            return
+    say("Skipped. JARVIS will ask for it on first start.")
+
+
+def cmd_setup(args):
+    auto = "--yes" in args or "-y" in args
+    say("JARVIS setup")
+    say("1/7 Python environment")
+    py = ensure_env()
+    paths.apply_cache_env()
+    say("      ready.")
+
+    say("2/7 The 'jarvis' command")
+    if shutil.which("jarvis"):
+        say("      already available.")
+    elif _ask_yes("      Make 'jarvis' work in every terminal?", auto):
+        cmd_install()
+
+    say("3/7 Gemini API key")
+    _setup_key(py)
+
+    say("4/7 Web browsing browser (about 150 MB)")
+    if glob.glob(os.path.join(paths.BROWSERS_DIR, "chromium*")):
+        say("      already downloaded.")
+    elif _ask_yes("      Download it now?", auto):
+        subprocess.call([py, "-m", "playwright", "install", "chromium"])
+
+    say("5/7 Speech recognition model (about 460 MB)")
+    if glob.glob(os.path.join(paths.HF_HOME, "hub", "models--Systran--faster-whisper-small", "snapshots", "*")):
+        say("      already downloaded.")
+    elif _ask_yes("      Download it now?", auto):
+        subprocess.call([py, "-c", "from core import stt; stt.load()"], cwd=ROOT)
+
+    say("6/7 TTS server (spoken replies)")
+    if ttsinstall.find_runtime():
+        say("      already installed.")
+    else:
+        say("      " + ttsinstall.DOWNLOAD_NOTICE)
+        if auto and "--with-tts" not in args:
+            say("      Skipped. Add --with-tts to accept the license and install it unattended.")
+        elif (auto or confirm("      Download and install the TTS server now?")):
+            if subprocess.call([py, "-m", "core.ttsinstall", "install"], cwd=ROOT) != 0:
+                say("      TTS install failed. Run it again later with: jarvis tts install")
+    model = os.path.join(ttsinstall.assets_dir(), "models", "tr_finetuned", "model.pth")
+    if not auto and not os.path.isfile(model):
+        folder = _ask_text("      Folder with your own voice model (Enter to skip): ")
+        if folder:
+            folder = os.path.abspath(os.path.expanduser(folder))
+            if os.path.isdir(folder):
+                config.set_value("assets_dir", folder)
+                say("      Assets folder set.")
+            else:
+                say("      Folder not found, skipped.")
+
+    say("7/7 Personal repository (optional)")
+    if not auto and not personal.repo_url():
+        url = _ask_text("      Git URL of your personal repository (Enter to skip): ")
+        if url:
+            try:
+                say("      " + personal.set_repo(url))
+            except RuntimeError as e:
+                say("      Skipped: %s" % e)
+
+    say("")
+    say("Final check:")
+    ok = _venv_works(py)
+    code = doctor.report(doctor.run_checks(py, ok, ok and _read(DEPS_MARKER) == _deps_signature()))
+    say("")
+    say("Setup finished. Start JARVIS with: jarvis" if code == 0 else "Fix the problems above, then run: jarvis doctor")
+
+
 def main(argv):
     command = argv[0] if argv else ""
     rest = argv[1:]
@@ -370,6 +494,10 @@ def main(argv):
         say(HELP)
     elif command in ("-V", "--version"):
         say(paths.VERSION)
+    elif command == "setup":
+        cmd_setup(rest)
+    elif command == "doctor":
+        cmd_doctor()
     elif command == "install":
         cmd_install()
     elif command == "uninstall":

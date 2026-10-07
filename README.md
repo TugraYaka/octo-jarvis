@@ -41,6 +41,15 @@ jarvis
 
 You can also skip `install` and start it directly with `python3 jarvis.py`.
 
+## Setup and health check
+
+```bash
+jarvis setup      # guided setup: environment, command, API key, browser, speech model, TTS server
+jarvis doctor     # checks everything and tells you what is wrong and how to fix it
+```
+
+`jarvis setup` asks before every large download. `jarvis setup --yes` accepts them all except the TTS server, which needs `--with-tts` because it comes with a license (see below). `jarvis doctor` changes nothing; it exits with an error code only for real problems, not for optional parts that are missing.
+
 ## First launch
 
 1. JARVIS installs its dependencies (a few minutes, once).
@@ -166,11 +175,13 @@ Set `JARVIS_HOME` to use another folder. Inside: `config.json` (key and settings
 ## Project layout
 
 ```
-jarvis.py            launcher: environment setup, install/uninstall, tts and personal commands
+jarvis.py            launcher: setup, doctor, install/uninstall, tts and personal commands
 jarvis.cmd           Windows shim for running from the source folder
 core/                Gemini client, memory, search, browser, speech, TTS client
 terminal/main.py     the chat interface
 tts_server/          local XTTS server and its pinned requirements
+tests/               smoke tests run by GitHub Actions on Linux, Windows and macOS
+.github/workflows/   CI and release pipelines
 packaging/homebrew/  Homebrew formula template
 ```
 
