@@ -399,7 +399,10 @@ def _setup_key(py):
     say("A Gemini API key is needed. Create a free one at https://aistudio.google.com/apikey")
     for _ in range(3):
         try:
-            key = getpass.getpass("Paste your key (hidden, Enter to skip): ").strip()
+            if sys.stdin.isatty():
+                key = getpass.getpass("Paste your key (hidden, Enter to skip): ").strip()
+            else:
+                key = sys.stdin.readline().strip()
         except (EOFError, KeyboardInterrupt):
             say()
             return
