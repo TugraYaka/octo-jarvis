@@ -147,12 +147,7 @@ def _fmt_size(num):
 
 
 def _rmtree(path):
-    def retry(func, target, _):
-        os.chmod(target, 0o700)
-        func(target)
-
-    option = "onexc" if sys.version_info >= (3, 12) else "onerror"
-    shutil.rmtree(path, **{option: retry})
+    paths.rmtree(path)
 
 
 def _shell_rc_files():

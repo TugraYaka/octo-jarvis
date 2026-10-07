@@ -1,6 +1,5 @@
 import importlib.util
 import os
-import shutil
 import subprocess
 
 from core import config, paths
@@ -38,10 +37,10 @@ def set_repo(url: str) -> str:
         raise RuntimeError("Invalid repository URL.")
     previous = repo_url()
     staging = paths.PERSONAL_DIR + ".new"
-    shutil.rmtree(staging, ignore_errors=True)
+    paths.rmtree(staging)
     os.makedirs(paths.DATA_DIR, exist_ok=True)
     _git("clone", "--depth", "1", "--", url, staging)
-    shutil.rmtree(paths.PERSONAL_DIR, ignore_errors=True)
+    paths.rmtree(paths.PERSONAL_DIR)
     os.replace(staging, paths.PERSONAL_DIR)
     config.set_value("personal_repo", url)
     return f"Personal repository cloned from {url}." + (
@@ -60,7 +59,7 @@ def pull() -> str:
 
 def remove() -> str:
     existed = os.path.isdir(paths.PERSONAL_DIR)
-    shutil.rmtree(paths.PERSONAL_DIR, ignore_errors=True)
+    paths.rmtree(paths.PERSONAL_DIR)
     config.set_value("personal_repo", None)
     return "Personal repository removed." if existed else "No personal repository was installed."
 

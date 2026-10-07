@@ -45,6 +45,23 @@ TTS_SERVER_SCRIPT = os.path.join(SOURCE_ROOT, "tts_server", "server.py")
 TTS_REQUIREMENTS = os.path.join(SOURCE_ROOT, "tts_server", "requirements.txt")
 
 
+def rmtree(path: str) -> None:
+    import shutil
+
+    def force(func, target, _):
+        for item in (os.path.dirname(target), target):
+            try:
+                os.chmod(item, 0o700)
+            except OSError:
+                pass
+        func(target)
+
+    if not os.path.exists(path):
+        return
+    option = "onexc" if sys.version_info >= (3, 12) else "onerror"
+    shutil.rmtree(path, **{option: force})
+
+
 def venv_python(venv_dir: str) -> str:
     if IS_WIN:
         return os.path.join(venv_dir, "Scripts", "python.exe")
