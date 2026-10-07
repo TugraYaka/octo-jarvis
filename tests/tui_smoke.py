@@ -32,7 +32,7 @@ async def run():
         assert app._mode == "key", f"expected key prompt, mode={app._mode}"
         assert "No Gemini API key found" in log_text(app)
         assert app.query_one("#input", Input).password is True
-        app.query_one("#input", Input).value = "AIzaSyFAKEFAKEFAKEFAKEFAKEFAKEFAKEFAKE0"
+        app.query_one("#input", Input).value = "not-a-real-key-for-tests"
         await pilot.press("enter")
         assert await wait_for(app, lambda: "rejected" in log_text(app), 30), "fake key was not rejected"
         assert app._mode == "key"
