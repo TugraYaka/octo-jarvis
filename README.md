@@ -53,6 +53,16 @@ brew install octo-jarvis
 
 Recent Homebrew versions refuse formulas from third-party taps until you trust them, which is what `brew trust` does. This route needs Homebrew's Python and installs from source; the first launch sets up its own environment. Afterwards `brew upgrade octo-jarvis` and `brew uninstall octo-jarvis` work with the short name. Run `jarvis uninstall` before `brew uninstall` to also remove JARVIS' data.
 
+### Downloading a build by hand
+
+The one-line installers above are the recommended way. If you download a build from the [releases](https://github.com/TugraYaka/octo-jarvis/releases) page in a browser instead, note that the builds are not signed by Apple yet. On macOS, Gatekeeper may then report that "Python.framework" is damaged. Nothing is wrong with the file; remove the download quarantine mark once and start it again:
+
+```bash
+xattr -dr com.apple.quarantine ~/Downloads/jarvis-macos-arm64
+```
+
+The `.sha256` files next to each build hold its checksum. Compare it with `shasum -a 256 <file>` to verify a download.
+
 ### Other systems
 
 Intel Macs and other CPU types have no ready-made build yet. Use the developer instructions below to run from source.
