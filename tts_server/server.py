@@ -71,7 +71,12 @@ print("Model loading complete. Server ready.")
 
 
 def reference_voices(lang):
-    lang_dir = os.path.join(VOICES_DIR, lang)
+    if not os.path.isdir(VOICES_DIR):
+        return []
+    match = [n for n in os.listdir(VOICES_DIR) if n == lang]
+    if not match:
+        return []
+    lang_dir = os.path.join(VOICES_DIR, match[0])
     if not os.path.isdir(lang_dir):
         return []
     return sorted(
