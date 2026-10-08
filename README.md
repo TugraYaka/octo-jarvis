@@ -128,7 +128,7 @@ Without any model, the server speaks with a built-in default XTTS voice. The cus
 
 What the server looks for:
 
-- **`models/tr_finetuned/`** must be a Coqui **XTTS v2** GPT fine-tune in the format produced by `TTS.demos.xtts_ft_demo` (TTS 0.22.0): `config.json` + `model.pth` + `vocab.json` + `speaker_ref.wav`. All four files are required; if one is missing the server says which and falls back. It is loaded with `Xtts.init_from_config` / `load_checkpoint`, generates 24 kHz mono audio, and the speaker embedding file (`speakers_xtts.pth`) is taken from the base XTTS v2 model that the installer downloads. It is used for Turkish (`tr`).
+- **`models/tr_finetuned/`** must be a Coqui **XTTS v2** GPT fine-tune in the format produced by Coqui's XTTS fine-tuning (`TTS.demos.xtts_ft_demo`): `config.json` + `model.pth` + `vocab.json` + `speaker_ref.wav`. All four files are required; if one is missing the server says which and falls back. It is loaded with `Xtts.init_from_config` / `load_checkpoint`, generates 24 kHz mono audio, and the speaker embedding file (`speakers_xtts.pth`) is taken from the base XTTS v2 model that the installer downloads. It is used for Turkish (`tr`).
 - **`voices/<lang>/*.wav`** are cloning references for the base model, used for any language that has no fine-tuned model.
 - If neither exists, the built-in default speaker is used.
 
