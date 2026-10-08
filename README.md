@@ -1,24 +1,35 @@
 # JARVIS
 
-A personal AI assistant for the terminal, powered by Google Gemini. Text chat, web search and browsing, long-term memory, voice input (speech-to-text) and optional spoken replies (text-to-speech).
+[![CI](https://github.com/TugraYaka/octo-jarvis/actions/workflows/ci.yml/badge.svg)](https://github.com/TugraYaka/octo-jarvis/actions/workflows/ci.yml)
 
-JARVIS runs straight from the source code: the first launch creates its own private Python environment and installs every dependency by itself. You never run `pip install` yourself.
+A personal AI assistant for the terminal, powered by Google Gemini.
 
-> Status: developed and tested on macOS (Apple Silicon). The Windows and Linux code paths are written but have not been tested on real machines yet. Please report anything that fails (details are in `debug.log`, see "Where things are stored").
+- Text chat with long-term memory
+- Web search (Google or DuckDuckGo) and a hidden browser for reading pages
+- Voice input (speech-to-text, offline)
+- Optional spoken replies (local text-to-speech server, custom voices supported)
+- Runs on macOS, Linux and Windows
+
+> **Status:** Prototype. Developed and used daily on macOS (Apple Silicon). Automated tests (install, API key flow, setup, uninstall) run on macOS, Linux and Windows for every change. Microphone, spoken replies and web browsing on Linux and Windows have not been tried on real machines yet; please report anything that fails.
+
+---
+
+# For users
 
 ## Requirements
 
-- Python 3.10 or newer, only for the from-source and Homebrew installs (on Windows tick "Add python.exe to PATH" in the installer)
 - A Gemini API key, free at <https://aistudio.google.com/apikey>
-- Internet access on first launch
-- Optional: a microphone (`/talk`, `/mictest`), `git` (personal repository)
-- Linux only: `sudo apt install libportaudio2` for the microphone, `python3-venv` if your distribution splits it out, and one of `paplay`/`aplay`/`ffplay` for spoken replies
+- Internet access
+- Optional: a microphone for `/talk`
+- Linux only: `libportaudio2` for the microphone (`sudo apt install libportaudio2`) and one of `paplay`, `aplay` or `ffplay` for spoken replies
+
+You do **not** need Python for the one-line install.
 
 ## Install
 
-### One-line install (no Python needed)
+### One line (macOS Apple Silicon, Linux x64, Windows x64)
 
-Downloads a ready-made build for your system (macOS Apple Silicon, Linux x64, Windows x64), verifies its checksum and adds the `jarvis` command.
+Downloads the ready-made app for your system, verifies its checksum and adds the `jarvis` command.
 
 ```bash
 # macOS and Linux
@@ -30,48 +41,34 @@ curl -fsSL https://raw.githubusercontent.com/TugraYaka/octo-jarvis/main/install.
 irm https://raw.githubusercontent.com/TugraYaka/octo-jarvis/main/install.ps1 | iex
 ```
 
-Then run `jarvis setup` for the guided setup. To install a specific version set `JARVIS_VERSION` (for example `v0.3.0`) first. The builds are attached to every [release](https://github.com/TugraYaka/octo-jarvis/releases).
+Open a new terminal and run `jarvis setup` for a guided setup, or just `jarvis`. To install a specific version, set `JARVIS_VERSION` (for example `v0.3.0`) first. All builds are attached to the [releases](https://github.com/TugraYaka/octo-jarvis/releases).
 
-### macOS with Homebrew
+### Homebrew (macOS)
 
 ```bash
 brew install TugraYaka/octo-jarvis/octo-jarvis
-jarvis
 ```
 
-After the first install (which adds the tap automatically) `brew upgrade octo-jarvis` and `brew uninstall octo-jarvis` work with the short name. The formula source is [`packaging/homebrew/octo-jarvis.rb`](packaging/homebrew/octo-jarvis.rb); it is published in the [homebrew-octo-jarvis](https://github.com/TugraYaka/homebrew-octo-jarvis) tap under `Formula/`.
+This route needs Homebrew's Python and installs from source; the first launch sets up its own environment. Afterwards `brew upgrade octo-jarvis` and `brew uninstall octo-jarvis` work with the short name. Run `jarvis uninstall` before `brew uninstall` to also remove JARVIS' data.
 
-### From source (macOS, Linux, Windows)
+### Other systems
 
-```bash
-git clone https://github.com/TugraYaka/octo-jarvis.git
-cd octo-jarvis
-python3 jarvis.py install      # Windows: py -3 jarvis.py install
-```
+Intel Macs and other CPU types have no ready-made build yet. Use the developer instructions below to run from source.
 
-`install` makes the `jarvis` command work in every terminal. On macOS and Linux it creates `~/.local/bin/jarvis` and, only after asking, adds that folder to your shell profile. On Windows it creates a `jarvis.cmd` launcher and adds it to your user PATH. Open a new terminal and type:
+## First start
 
-```bash
-jarvis
-```
-
-You can also skip `install` and start it directly with `python3 jarvis.py`.
+1. Run `jarvis`. If there is no Gemini API key yet, the chat asks for it before anything else. The key is stored only on your computer, in a file only you can read. The `GEMINI_API_KEY` environment variable also works.
+2. Google checks the key. A wrong key is rejected right away. If a saved key stops working later, JARVIS answers with a red error because it cannot respond without it.
+3. Type `/logout` at any time to delete the saved key and enter a new one.
 
 ## Setup and health check
 
 ```bash
-jarvis setup      # guided setup: environment, command, API key, browser, speech model, TTS server
+jarvis setup      # guided setup: command, API key, browser, speech model, TTS server
 jarvis doctor     # checks everything and tells you what is wrong and how to fix it
 ```
 
-`jarvis setup` asks before every large download. `jarvis setup --yes` accepts them all except the TTS server, which needs `--with-tts` because it comes with a license (see below). `jarvis doctor` changes nothing; it exits with an error code only for real problems, not for optional parts that are missing.
-
-## First launch
-
-1. JARVIS installs its dependencies (a few minutes, once).
-2. If there is no Gemini API key yet, the chat asks for it before anything else. The key is stored in `config.json` inside the data folder, readable only by you. The `GEMINI_API_KEY` environment variable also works.
-3. Google checks the key. A wrong key is rejected right away; a key that stops working later makes JARVIS answer with a red error because it cannot respond without it.
-4. Type `/logout` at any time to delete the saved key and enter a new one.
+`jarvis setup` asks before every large download. `jarvis setup --yes` accepts them all except the TTS server, which needs `--with-tts` because it comes with a license (see below). `jarvis doctor` changes nothing.
 
 ## Chat commands
 
@@ -105,7 +102,7 @@ Spoken replies come from a separate local server (Coqui XTTS v2). It is large, s
 
 The installer downloads a private Python 3.11 runtime, PyTorch (about 3-5 GB in total) and the XTTS v2 base model into JARVIS' data folder. XTTS v2 is published under the [Coqui Public Model License](https://coqui.ai/cpml), which allows non-commercial use only; installing it means you accept that license. Intel Macs are not supported by the pinned PyTorch version.
 
-If you already have a compatible environment, set `JARVIS_TTS_PYTHON` to its Python executable and JARVIS uses it instead (a `venv_tts` folder next to the source folder is also detected).
+If you already have a compatible environment, set `JARVIS_TTS_PYTHON` to its Python executable and JARVIS uses it instead.
 
 ```bash
 jarvis tts status              # what was found
@@ -181,26 +178,72 @@ Set `JARVIS_HOME` to use another folder. Inside: `config.json` (key and settings
 
 ## Troubleshooting
 
-- **`python` is not recognized (Windows):** reinstall Python with "Add to PATH", or use `py -3`.
-- **Dependency install fails:** check your connection and run `jarvis` again; it resumes.
+- **Run `jarvis doctor` first.** It names the problem and the fix.
 - **Microphone errors:** check the OS microphone permission and the default input device; on Linux install `libportaudio2`.
 - **No sound:** run `/voice`; if the server is off, `/turnontts`. On Linux install `pulseaudio-utils`, `alsa-utils` or `ffmpeg`.
-- **Web browsing fails on Linux:** Chromium needs system libraries; run `sudo $HOME/.local/share/jarvis/venv/bin/python -m playwright install-deps chromium`.
+- **Web browsing fails on Linux:** Chromium needs its usual system libraries (nss, atk, gbm, alsa). On a from-source install `sudo <data folder>/venv/bin/python -m playwright install-deps chromium` installs them.
+- **Downloads are slow or stuck:** run `jarvis setup` again, it continues where it stopped.
 - **Other errors:** see `logs/debug.log` in the data folder. Yellow messages are Gemini or quota warnings, red ones are local errors.
+
+---
+
+# For developers
+
+## Run from source
+
+Needs Python 3.10 or newer (on Windows tick "Add python.exe to PATH" in the installer) and `git`.
+
+```bash
+git clone https://github.com/TugraYaka/octo-jarvis.git
+cd octo-jarvis
+python3 jarvis.py setup        # Windows: py -3 jarvis.py setup
+python3 jarvis.py              # start the assistant
+```
+
+You never run `pip install` yourself: the launcher creates a private virtual environment in the data folder and installs `requirements.txt` into it (again whenever that file changes). `python3 jarvis.py install` additionally makes the `jarvis` command available in every terminal.
+
+`jarvis doctor` shows the state of your environment. Set `JARVIS_HOME` to a scratch folder to keep experiments away from your real data.
+
+## Branches and releases
+
+| Branch | Purpose |
+|---|---|
+| `main` | The released Prototype. Fixes go here; every release is tagged from it |
+| `jarvis1` | Development of the next version (1.0) |
+
+Releasing: bump `VERSION` in `core/paths.py`, push, then push a tag `vX.Y.Z` that matches it. The `Release` workflow runs the tests, builds the packages for macOS, Linux and Windows, and publishes a GitHub release with the packages and their checksums.
+
+## Tests
+
+```bash
+python3 tests/smoke.py         # install, setup, key flow, personal repo, uninstall (downloads ~600 MB)
+python3 tests/tts_smoke.py     # full TTS server install and a test synthesis (several GB)
+```
+
+GitHub Actions runs the smoke test on macOS, Linux and Windows with Python 3.10 and 3.13 for every push. The TTS test is started by hand: Actions, CI, Run workflow, tick the TTS box.
+
+## Building the standalone packages
+
+```bash
+pip install -r requirements.txt pyinstaller
+python packaging/pyinstaller/build.py
+```
+
+This produces `dist/jarvis-<system>-<cpu>.tar.gz` (`.zip` on Windows) and a `.sha256` file. The `Build` workflow does this on all three systems, tests the result and the installer scripts, and the `Release` workflow attaches them to the release.
 
 ## Project layout
 
 ```
-jarvis.py            launcher: setup, doctor, install/uninstall, tts and personal commands
-jarvis.cmd           Windows shim for running from the source folder
-core/                Gemini client, memory, search, browser, speech, TTS client
-terminal/main.py     the chat interface
-tts_server/          local XTTS server and its pinned requirements
-tests/               smoke tests run by GitHub Actions on Linux, Windows and macOS
-.github/workflows/   CI and release pipelines
-packaging/homebrew/  Homebrew formula template
+jarvis.py               launcher: setup, doctor, install/uninstall, tts and personal commands
+jarvis.cmd              Windows shim for running from the source folder
+core/                   Gemini client, memory, search, browser, speech, TTS client, doctor
+terminal/main.py        the chat interface
+tts_server/             local XTTS server and its pinned requirements
+tests/                  smoke tests
+.github/workflows/      CI, Build and Release pipelines
+packaging/homebrew/     Homebrew formula
 packaging/pyinstaller/  builds the standalone packages
-install.sh, install.ps1  one-line installers
+install.sh, install.ps1 one-line installers
 ```
 
 ## License
