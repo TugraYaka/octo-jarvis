@@ -9,4 +9,4 @@ playwright>=1.63,<2
 textual>=8.2,<9
 rich
 tqdm
-uv>=0.5
+uv>=0.12.23
