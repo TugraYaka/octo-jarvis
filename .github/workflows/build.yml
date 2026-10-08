@@ -71,7 +71,7 @@ jobs:
           & "$env:JARVIS_HOME\bin\jarvis.cmd" --version
           & "$env:JARVIS_HOME\app\jarvis.exe" uninstall --yes
           Stop-Process -Id $server.Id -Force
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.name }}
           path: |
