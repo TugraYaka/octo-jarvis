@@ -13,7 +13,6 @@ updates:
       - dependency-name: transformers
         update-types: ["version-update:semver-major"]
       - dependency-name: numpy
-        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
