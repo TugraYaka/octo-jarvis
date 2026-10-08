@@ -285,7 +285,7 @@ def get_thinking_level() -> str:
 
 def _thinking_config() -> types.ThinkingConfig:
     if _thinking_level == "low":
-        return types.ThinkingConfig(thinking_budget=0)
+        return types.ThinkingConfig(thinking_level="minimal")
     return types.ThinkingConfig(thinking_level="high")
 
 
