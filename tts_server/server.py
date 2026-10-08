@@ -16,6 +16,9 @@ SERVICE_ID = "jarvis-tts"
 BASE_MODEL = "tts_models/multilingual/multi-dataset/xtts_v2"
 DEFAULT_SPEAKER = "Ana Florence"
 TR_SPEED = 1.25
+SUPPORTED_LANGS = frozenset(
+    ["en", "es", "fr", "de", "it", "pt", "pl", "tr", "ru", "nl", "cs", "ar", "zh-cn", "hu", "ko", "ja", "hi"]
+)
 
 ASSETS_DIR = os.environ.get("JARVIS_ASSETS_DIR") or os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "assets"
@@ -118,6 +121,8 @@ class Handler(BaseHTTPRequestHandler):
             lang = body.get("lang", "tr")
             if not isinstance(text, str) or not text.strip():
                 raise ValueError("text must be a non-empty string")
+            if lang not in SUPPORTED_LANGS:
+                raise ValueError("unsupported language")
         except (ValueError, KeyError, TypeError) as e:
             self._reply(400, f"Bad request: {e}".encode())
             return
