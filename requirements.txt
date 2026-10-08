@@ -3,10 +3,10 @@ certifi
 httpx>=0.28.1,<1
 numpy>=2,<3
 faster-whisper>=1.2.1,<2
-sounddevice>=0.5,<1
+sounddevice>=0.5.6,<1
 ddgs>=9.16,<10
 playwright>=1.63,<2
-textual>=8.2,<9
+textual>=8.2.8,<9
 rich
 tqdm
-uv>=0.5
+uv>=0.12.23
