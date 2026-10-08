@@ -1,6 +1,6 @@
 TTS==0.22.0
 torch==2.5.1
 torchaudio==2.5.1
-transformers==4.42.4
+transformers==5.18.0
 numpy==1.26.4
 librosa>=0.10
