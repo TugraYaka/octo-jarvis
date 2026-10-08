@@ -17,7 +17,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Tag must match the version in core/paths.py
         run: |
           version=$(python3 -c "import re;print(re.search(r'VERSION = \"([^\"]+)\"', open('core/paths.py').read()).group(1))")
