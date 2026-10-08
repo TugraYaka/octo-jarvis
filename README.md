@@ -46,10 +46,12 @@ Open a new terminal and run `jarvis setup` for a guided setup, or just `jarvis`.
 ### Homebrew (macOS)
 
 ```bash
-brew install TugraYaka/octo-jarvis/octo-jarvis
+brew tap TugraYaka/octo-jarvis
+brew trust TugraYaka/octo-jarvis
+brew install octo-jarvis
 ```
 
-This route needs Homebrew's Python and installs from source; the first launch sets up its own environment. Afterwards `brew upgrade octo-jarvis` and `brew uninstall octo-jarvis` work with the short name. Run `jarvis uninstall` before `brew uninstall` to also remove JARVIS' data.
+Recent Homebrew versions refuse formulas from third-party taps until you trust them, which is what `brew trust` does. This route needs Homebrew's Python and installs from source; the first launch sets up its own environment. Afterwards `brew upgrade octo-jarvis` and `brew uninstall octo-jarvis` work with the short name. Run `jarvis uninstall` before `brew uninstall` to also remove JARVIS' data.
 
 ### Other systems
 
