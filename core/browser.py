@@ -70,10 +70,14 @@ def _is_missing_browser(error: Exception) -> bool:
     return "Executable doesn't exist" in text or "playwright install" in text
 
 
-def _install_chromium() -> None:
+def install_chromium() -> None:
+    from playwright._impl._driver import compute_driver_executable, get_driver_env
+
     _log("[browser] chromium missing, downloading it")
+    driver = compute_driver_executable()
+    command = list(driver) if isinstance(driver, (tuple, list)) else [driver]
     result = subprocess.run(
-        [sys.executable, "-m", "playwright", "install", "chromium"],
+        command + ["install", "chromium"], env=get_driver_env(),
         capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     if result.returncode != 0:
@@ -152,7 +156,7 @@ class BrowserSession:
             except Exception as e:
                 if not _is_missing_browser(e):
                     raise
-                _install_chromium()
+                install_chromium()
                 self._launch()
         except Exception:
             self._playwright.stop()

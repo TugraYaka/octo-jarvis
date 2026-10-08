@@ -23,3 +23,8 @@ tr_finetuned/
 finetune_out/
 *.pth
 *.wav
+
+# Build output
+dist/
+build/
+*.spec

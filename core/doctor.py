@@ -23,7 +23,7 @@ def _online() -> bool:
 def _probe(py: str, code: str, timeout: int = 60):
     try:
         result = subprocess.run(
-            [py, "-c", code], cwd=paths.SOURCE_ROOT, capture_output=True, text=True,
+            [py, *paths.python_c_args(code)], cwd=paths.RESOURCE_DIR, capture_output=True, text=True,
             encoding="utf-8", errors="replace", timeout=timeout,
         )
     except (OSError, subprocess.TimeoutExpired) as e:

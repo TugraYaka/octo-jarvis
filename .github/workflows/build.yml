@@ -1,0 +1,80 @@
+name: Build
+
+on:
+  workflow_call:
+  workflow_dispatch:
+  pull_request:
+    paths: ["packaging/**", "install.sh", "install.ps1", "jarvis.py", "requirements.txt", ".github/workflows/build.yml"]
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, name: macos-arm64, archive: jarvis-macos-arm64.tar.gz }
+          - { os: ubuntu-22.04, name: linux-x64, archive: jarvis-linux-x64.tar.gz }
+          - { os: windows-latest, name: windows-x64, archive: jarvis-windows-x64.zip }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Linux audio library
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libportaudio2
+      - name: Install build dependencies
+        run: python -m pip install -r requirements.txt pyinstaller
+      - name: Build
+        run: python packaging/pyinstaller/build.py
+      - name: Test the packaged app (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          export JARVIS_HOME="$RUNNER_TEMP/jarvis-home"
+          dist/jarvis/jarvis --version
+          dist/jarvis/jarvis doctor || true
+          dist/jarvis/jarvis _run tests/tui_smoke.py
+      - name: Test the packaged app (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:JARVIS_HOME = "$env:RUNNER_TEMP\jarvis-home"
+          dist\jarvis\jarvis.exe --version
+          dist\jarvis\jarvis.exe doctor
+          dist\jarvis\jarvis.exe _run tests\tui_smoke.py
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - name: Test the install script (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          export HOME="$RUNNER_TEMP/home"; mkdir -p "$HOME/.local/bin"
+          export PATH="$HOME/.local/bin:$PATH"
+          export JARVIS_HOME="$RUNNER_TEMP/install-data"
+          (cd dist && python -m http.server 8799 --bind 127.0.0.1 >/dev/null 2>&1 &)
+          sleep 2
+          JARVIS_BASE_URL=http://127.0.0.1:8799 sh install.sh
+          jarvis --version
+          jarvis uninstall --yes
+          test ! -e "$JARVIS_HOME"
+      - name: Test the install script (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:JARVIS_HOME = "$env:RUNNER_TEMP\install-data"
+          $server = Start-Process python -ArgumentList "-m","http.server","8799","--bind","127.0.0.1" -WorkingDirectory dist -PassThru -WindowStyle Hidden
+          Start-Sleep -Seconds 3
+          $env:JARVIS_BASE_URL = "http://127.0.0.1:8799"
+          .\install.ps1
+          & "$env:JARVIS_HOME\app\jarvis.exe" --version
+          & "$env:JARVIS_HOME\bin\jarvis.cmd" --version
+          & "$env:JARVIS_HOME\app\jarvis.exe" uninstall --yes
+          Stop-Process -Id $server.Id -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            dist/${{ matrix.archive }}
+            dist/${{ matrix.archive }}.sha256
+          if-no-files-found: error

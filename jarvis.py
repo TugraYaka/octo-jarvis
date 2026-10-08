@@ -10,12 +10,14 @@ import sys
 if sys.version_info < (3, 10):
     sys.exit("JARVIS needs Python 3.10 or newer (found %d.%d)." % sys.version_info[:2])
 
-ROOT = os.path.dirname(os.path.realpath(__file__))
+FROZEN = bool(getattr(sys, "frozen", False))
+ROOT = os.path.abspath(getattr(sys, "_MEIPASS", "")) if FROZEN else os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, ROOT)
 
 from core import config, doctor, paths, personal, ttsinstall  # noqa: E402
 
 DEPS_MARKER = os.path.join(paths.VENV_DIR, ".jarvis-deps")
+TTS_INSTALL_CODE = "from core import ttsinstall; ttsinstall.cli_install()"
 RC_START = "# >>> jarvis >>>"
 RC_END = "# <<< jarvis <<<"
 SHIM_TAG = "JARVIS launcher (managed by 'jarvis install')"
@@ -89,6 +91,8 @@ def _venv_works(py):
 
 
 def ensure_env():
+    if FROZEN:
+        return sys.executable
     py = paths.venv_python(paths.VENV_DIR)
     if not _venv_works(py):
         say("Setting up JARVIS (first run only)...")
@@ -118,6 +122,11 @@ def ensure_env():
 
 
 def run_app(args):
+    if FROZEN:
+        from terminal import main as app
+
+        app.main()
+        return
     py = ensure_env()
     cmd = [py, os.path.join(ROOT, "terminal", "main.py")] + args
     if paths.IS_WIN:
@@ -197,32 +206,39 @@ def _win_path_edit(add=None, remove=None):
     ctypes.windll.user32.SendMessageTimeoutW(0xFFFF, 0x1A, 0, "Environment", 2, 5000, None)
 
 
+def _win_shim_text():
+    script = os.path.join(ROOT, "jarvis.py")
+    if FROZEN:
+        run = '"%s" %%*\n' % sys.executable
+    else:
+        run = 'if exist "%s" (\n  "%s" "%s" %%*\n) else (\n  py -3 "%s" %%*\n)\n' % (
+            sys.executable, sys.executable, script, script)
+    return "@echo off\nrem %s\n%sexit /b %%errorlevel%%\n" % (SHIM_TAG, run)
+
+
+def _unix_shim_text():
+    if FROZEN:
+        run = 'exec %s "$@"\n' % shlex.quote(sys.executable)
+    else:
+        run = 'if [ -x %s ]; then PY=%s; else PY=python3; fi\nexec "$PY" %s "$@"\n' % (
+            shlex.quote(sys.executable), shlex.quote(sys.executable),
+            shlex.quote(os.path.join(ROOT, "jarvis.py")))
+    return "#!/bin/sh\n# %s\n%s" % (SHIM_TAG, run)
+
+
 def cmd_install():
     if paths.IS_WIN:
         os.makedirs(paths.BIN_DIR, exist_ok=True)
         shim = os.path.join(paths.BIN_DIR, "jarvis.cmd")
-        script = os.path.join(ROOT, "jarvis.py")
         with open(shim, "w", encoding="utf-8", newline="\r\n") as f:
-            f.write(
-                "@echo off\n"
-                "rem %s\n"
-                'if exist "%s" (\n  "%s" "%s" %%*\n) else (\n  py -3 "%s" %%*\n)\n'
-                "exit /b %%errorlevel%%\n" % (SHIM_TAG, sys.executable, sys.executable, script, script)
-            )
+            f.write(_win_shim_text())
         _win_path_edit(add=paths.BIN_DIR)
         say("Installed. Open a new terminal window and type: jarvis")
         return
     os.makedirs(UNIX_BIN_DIR, exist_ok=True)
     shim = _unix_shim_path()
     with open(shim, "w", encoding="utf-8") as f:
-        f.write(
-            "#!/bin/sh\n"
-            "# %s\n"
-            'if [ -x %s ]; then PY=%s; else PY=python3; fi\n'
-            'exec "$PY" %s "$@"\n'
-            % (SHIM_TAG, shlex.quote(sys.executable), shlex.quote(sys.executable),
-               shlex.quote(os.path.join(ROOT, "jarvis.py")))
-        )
+        f.write(_unix_shim_text())
     os.chmod(shim, 0o755)
     on_path = UNIX_BIN_DIR in os.environ.get("PATH", "").split(os.pathsep)
     if on_path:
@@ -272,7 +288,7 @@ def cmd_uninstall(args):
     custom_assets = config.get("assets_dir")
     if custom_assets:
         say("  (Your voice assets folder %s is NOT touched.)" % custom_assets)
-    if not brew:
+    if not brew and not FROZEN:
         say("  (The source folder %s is NOT touched; delete it yourself.)" % ROOT)
 
     if "--yes" not in args and "-y" not in args and not confirm("Continue?"):
@@ -289,7 +305,16 @@ def cmd_uninstall(args):
             say("Could not clean the PATH entry: %s" % e)
     elif shim_ours:
         os.remove(shim)
-    if os.path.isdir(paths.DATA_DIR):
+    if FROZEN and paths.IS_WIN and os.path.isdir(paths.DATA_DIR):
+        for name in os.listdir(paths.DATA_DIR):
+            if os.path.join(paths.DATA_DIR, name) != paths.APP_DIR:
+                target = os.path.join(paths.DATA_DIR, name)
+                _rmtree(target) if os.path.isdir(target) else os.remove(target)
+        subprocess.Popen(
+            'cmd /c "ping -n 4 127.0.0.1 >nul & rmdir /s /q "%s""' % paths.DATA_DIR,
+            creationflags=0x00000008 | 0x08000000, close_fds=True,
+        )
+    elif os.path.isdir(paths.DATA_DIR):
         _rmtree(paths.DATA_DIR)
     say("JARVIS data, TTS server and command removed.")
     if brew:
@@ -307,7 +332,7 @@ def cmd_tts(args):
             say("Cancelled.")
             return
         py = ensure_env()
-        sys.exit(subprocess.call([py, "-m", "core.ttsinstall", "install"], cwd=ROOT))
+        sys.exit(subprocess.call([py, *paths.python_c_args(TTS_INSTALL_CODE)], cwd=ROOT))
     if action == "uninstall":
         if not os.path.isdir(paths.TTS_DIR):
             say("No JARVIS-managed TTS server is installed.")
@@ -362,10 +387,16 @@ def cmd_personal(args):
         say("Extra packages from the personal repository are installed on the next launch.")
 
 
-def cmd_doctor():
+def _env_state():
+    if FROZEN:
+        return sys.executable, True, True
     py = paths.venv_python(paths.VENV_DIR)
     ok = _venv_works(py)
-    current = ok and _read(DEPS_MARKER) == _deps_signature()
+    return py, ok, ok and _read(DEPS_MARKER) == _deps_signature()
+
+
+def cmd_doctor():
+    py, ok, current = _env_state()
     sys.exit(doctor.report(doctor.run_checks(py, ok, current)))
 
 
@@ -439,13 +470,13 @@ def cmd_setup(args):
     if glob.glob(os.path.join(paths.BROWSERS_DIR, "chromium*")):
         say("      already downloaded.")
     elif _ask_yes("      Download it now?", auto):
-        subprocess.call([py, "-m", "playwright", "install", "chromium"])
+        subprocess.call([py, *paths.python_c_args("from core import browser; browser.install_chromium()")], cwd=ROOT)
 
     say("5/7 Speech recognition model (about 460 MB)")
     if glob.glob(os.path.join(paths.HF_HOME, "hub", "models--Systran--faster-whisper-small", "snapshots", "*")):
         say("      already downloaded.")
     elif _ask_yes("      Download it now?", auto):
-        subprocess.call([py, "-c", "from core import stt; stt.load()"], cwd=ROOT)
+        subprocess.call([py, *paths.python_c_args("from core import stt; stt.load()")], cwd=ROOT)
 
     say("6/7 TTS server (spoken replies)")
     if ttsinstall.find_runtime():
@@ -455,7 +486,7 @@ def cmd_setup(args):
         if auto and "--with-tts" not in args:
             say("      Skipped. Add --with-tts to accept the license and install it unattended.")
         elif (auto or confirm("      Download and install the TTS server now?")):
-            if subprocess.call([py, "-m", "core.ttsinstall", "install"], cwd=ROOT) != 0:
+            if subprocess.call([py, *paths.python_c_args(TTS_INSTALL_CODE)], cwd=ROOT) != 0:
                 say("      TTS install failed. Run it again later with: jarvis tts install")
     model = os.path.join(ttsinstall.assets_dir(), "models", "tr_finetuned", "model.pth")
     if not auto and not os.path.isfile(model):
@@ -479,8 +510,7 @@ def cmd_setup(args):
 
     say("")
     say("Final check:")
-    ok = _venv_works(py)
-    code = doctor.report(doctor.run_checks(py, ok, ok and _read(DEPS_MARKER) == _deps_signature()))
+    code = doctor.report(doctor.run_checks(*_env_state()))
     say("")
     say("Setup finished. Start JARVIS with: jarvis" if code == 0 else "Fix the problems above, then run: jarvis doctor")
 
@@ -504,6 +534,11 @@ def main(argv):
         cmd_tts(rest)
     elif command == "personal":
         cmd_personal(rest)
+    elif command == "_run" and rest:
+        with open(rest[0], encoding="utf-8") as f:
+            exec(compile(f.read(), rest[0], "exec"), {"__name__": "__main__"})
+    elif command == "_exec" and rest:
+        exec(compile(rest[0], "<exec>", "exec"), {"__name__": "__main__"})
     elif command in ("", "run"):
         run_app(rest)
     else:

@@ -7,7 +7,9 @@ VERSION = "0.3.0"
 IS_WIN = sys.platform == "win32"
 IS_MAC = sys.platform == "darwin"
 
+FROZEN = bool(getattr(sys, "frozen", False))
 SOURCE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+RESOURCE_DIR = os.path.abspath(getattr(sys, "_MEIPASS", SOURCE_ROOT)) if FROZEN else SOURCE_ROOT
 
 
 def _default_data_dir() -> str:
@@ -41,8 +43,15 @@ TTS_VENV_DIR = os.path.join(TTS_DIR, "venv")
 TTS_HOME = os.path.join(TTS_DIR, "cache")
 TTS_LOG = os.path.join(LOG_DIR, "tts_server.log")
 DEFAULT_ASSETS_DIR = os.path.join(DATA_DIR, "assets")
-TTS_SERVER_SCRIPT = os.path.join(SOURCE_ROOT, "tts_server", "server.py")
-TTS_REQUIREMENTS = os.path.join(SOURCE_ROOT, "tts_server", "requirements.txt")
+TTS_SERVER_DIR = os.path.join(TTS_DIR, "server")
+TTS_SERVER_SCRIPT = os.path.join(TTS_SERVER_DIR, "server.py")
+TTS_SERVER_SRC = os.path.join(RESOURCE_DIR, "tts_server")
+TTS_REQUIREMENTS = os.path.join(TTS_SERVER_SRC, "requirements.txt")
+APP_DIR = os.path.join(DATA_DIR, "app")
+
+
+def python_c_args(code: str) -> list:
+    return ["_exec", code] if FROZEN else ["-c", code]
 
 
 def rmtree(path: str) -> None:

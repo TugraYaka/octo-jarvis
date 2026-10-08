@@ -8,13 +8,29 @@ JARVIS runs straight from the source code: the first launch creates its own priv
 
 ## Requirements
 
-- Python 3.10 or newer (on Windows tick "Add python.exe to PATH" in the installer)
+- Python 3.10 or newer, only for the from-source and Homebrew installs (on Windows tick "Add python.exe to PATH" in the installer)
 - A Gemini API key, free at <https://aistudio.google.com/apikey>
 - Internet access on first launch
 - Optional: a microphone (`/talk`, `/mictest`), `git` (personal repository)
 - Linux only: `sudo apt install libportaudio2` for the microphone, `python3-venv` if your distribution splits it out, and one of `paplay`/`aplay`/`ffplay` for spoken replies
 
 ## Install
+
+### One-line install (no Python needed)
+
+Downloads a ready-made build for your system (macOS Apple Silicon, Linux x64, Windows x64), verifies its checksum and adds the `jarvis` command.
+
+```bash
+# macOS and Linux
+curl -fsSL https://raw.githubusercontent.com/TugraYaka/octo-jarvis/main/install.sh | sh
+```
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/TugraYaka/octo-jarvis/main/install.ps1 | iex
+```
+
+Then run `jarvis setup` for the guided setup. To install a specific version set `JARVIS_VERSION` (for example `v0.3.0`) first. The builds are attached to every [release](https://github.com/TugraYaka/octo-jarvis/releases).
 
 ### macOS with Homebrew
 
@@ -183,6 +199,8 @@ tts_server/          local XTTS server and its pinned requirements
 tests/               smoke tests run by GitHub Actions on Linux, Windows and macOS
 .github/workflows/   CI and release pipelines
 packaging/homebrew/  Homebrew formula template
+packaging/pyinstaller/  builds the standalone packages
+install.sh, install.ps1  one-line installers
 ```
 
 ## License

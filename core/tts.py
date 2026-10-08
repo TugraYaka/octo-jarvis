@@ -107,11 +107,12 @@ def _launch() -> None:
     runtime = ttsinstall.find_runtime()
     if runtime is None:
         raise RuntimeError("TTS server is not installed. Run /installtts to install it.")
+    ttsinstall.ensure_server_files()
     overrides = ttsinstall.server_env(runtime)
     if IS_MAC:
         exports = " ".join(f"{key}={shlex.quote(value)}" for key, value in overrides.items())
         cmd = (
-            f"cd {shlex.quote(paths.SOURCE_ROOT)} && env {exports} "
+            f"cd {shlex.quote(paths.TTS_SERVER_DIR)} && env {exports} "
             f"{shlex.quote(runtime.python)} {shlex.quote(paths.TTS_SERVER_SCRIPT)}"
         )
         cmd = cmd.replace("\\", "\\\\").replace('"', '\\"')
@@ -129,7 +130,7 @@ def _launch() -> None:
         out = None if IS_WIN else open(paths.TTS_LOG, "ab")
         _proc = subprocess.Popen(
             [runtime.python, paths.TTS_SERVER_SCRIPT],
-            cwd=paths.SOURCE_ROOT,
+            cwd=paths.TTS_SERVER_DIR,
             env={**os.environ, **overrides},
             creationflags=flags,
             stdout=out,

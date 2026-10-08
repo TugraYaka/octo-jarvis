@@ -30,9 +30,6 @@ def find_runtime() -> Runtime | None:
     owned = paths.venv_python(paths.TTS_VENV_DIR)
     if os.path.isfile(owned) and os.path.isfile(INSTALLED_MARKER):
         return Runtime(owned, True)
-    legacy = paths.venv_python(os.path.join(os.path.dirname(paths.SOURCE_ROOT), "venv_tts"))
-    if os.path.isfile(legacy):
-        return Runtime(legacy, False)
     return None
 
 
@@ -57,6 +54,21 @@ def server_env(runtime: Runtime) -> dict:
     if runtime.owned:
         env["TTS_HOME"] = paths.TTS_HOME
     return env
+
+
+def ensure_server_files() -> None:
+    shutil.copytree(
+        paths.TTS_SERVER_SRC, paths.TTS_SERVER_DIR, dirs_exist_ok=True,
+        ignore=shutil.ignore_patterns("__pycache__", "assets"),
+    )
+
+
+def _uv_command() -> list:
+    if paths.FROZEN:
+        import uv
+
+        return [uv.find_uv_bin()]
+    return [sys.executable, "-m", "uv"]
 
 
 def _run(cmd: list, progress: Callable[[str], None], env: dict) -> None:
@@ -87,7 +99,8 @@ def install(progress: Callable[[str], None]) -> None:
         "UV_PYTHON_INSTALL_DIR": os.path.join(paths.TTS_DIR, "python"),
         "NO_COLOR": "1",
     }
-    uv = [sys.executable, "-m", "uv"]
+    uv = _uv_command()
+    ensure_server_files()
     try:
         if os.path.exists(INSTALLED_MARKER):
             os.remove(INSTALLED_MARKER)
@@ -122,11 +135,13 @@ def uninstall() -> bool:
     return existed
 
 
-if __name__ == "__main__":
-    if sys.argv[1:] != ["install"]:
-        sys.exit("Usage: python -m core.ttsinstall install")
+def cli_install() -> None:
     try:
         install(lambda line: print(line, flush=True))
     except Exception as e:
         sys.exit(f"TTS install failed: {e}")
     print("TTS server installed.")
+
+
+if __name__ == "__main__":
+    cli_install()
