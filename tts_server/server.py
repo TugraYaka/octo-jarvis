@@ -123,7 +123,7 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(length))
             text = body["text"]
-            lang = body.get("lang", "tr")
+            lang = body.get("lang", "en")
             if not isinstance(text, str) or not text.strip():
                 raise ValueError("text must be a non-empty string")
             if lang not in SUPPORTED_LANGS:

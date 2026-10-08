@@ -1,5 +1,6 @@
 import atexit
 import ipaddress
+import locale
 import os
 import re
 import socket
@@ -42,6 +43,29 @@ _INJECTION_PATTERNS = [
 
 def _looks_like_injection(text: str) -> bool:
     return any(p.search(text) for p in _INJECTION_PATTERNS)
+
+
+def _browser_locale() -> str:
+    try:
+        name = locale.getlocale()[0]
+    except (ValueError, TypeError):
+        name = None
+    if name and "_" in name and name.replace("_", "").isalpha():
+        return name.replace("_", "-")
+    return "en-US"
+
+
+def _user_agent() -> str:
+    if sys.platform == "win32":
+        platform_token = "Windows NT 10.0; Win64; x64"
+    elif sys.platform == "darwin":
+        platform_token = "Macintosh; Intel Mac OS X 10_15_7"
+    else:
+        platform_token = "X11; Linux x86_64"
+    return (
+        f"Mozilla/5.0 ({platform_token}) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+    )
 
 
 _CHALLENGE_TITLES = ("just a moment", "attention required", "checking your browser", "access denied")
@@ -125,12 +149,9 @@ class BrowserSession:
         if self._headless:
             args += ["--mute-audio", "--autoplay-policy=user-gesture-required"]
         context_kwargs = dict(
-            user_agent=(
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
-            ),
+            user_agent=_user_agent(),
             viewport={"width": 1280, "height": 800},
-            locale="tr-TR",
+            locale=_browser_locale(),
         )
         if self._persistent:
             os.makedirs(LIVE_PROFILE_DIR, exist_ok=True)

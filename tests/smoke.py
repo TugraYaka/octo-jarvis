@@ -57,6 +57,9 @@ check("doctor after setup", "[ ok ] Environment" in r.stdout and "[FAIL] Gemini 
 r = run([venv_python(), os.path.join(ROOT, "tests", "tui_smoke.py")], cwd=ROOT)
 check("chat asks for a key and rejects a fake one", r.returncode == 0 and "tui ok" in r.stdout, r.stdout + r.stderr)
 
+r = run([venv_python(), os.path.join(ROOT, "tests", "unit_smoke.py")], cwd=ROOT)
+check("unit checks", r.returncode == 0, r.stdout + r.stderr)
+
 r = run([venv_python(), "-c", "import core.gemini_client, core.tts, core.stt, core.browser, core.memory"], cwd=ROOT)
 check("core modules import", r.returncode == 0, r.stdout + r.stderr)
 

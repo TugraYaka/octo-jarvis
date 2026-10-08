@@ -16,6 +16,8 @@ def _load() -> dict:
             data = json.load(f)
     except (json.JSONDecodeError, OSError):
         return dict(_DEFAULT_STATE)
+    if not isinstance(data, dict):
+        return dict(_DEFAULT_STATE)
     return {
         "google": bool(data.get("google", _DEFAULT_STATE["google"])),
         "duck": bool(data.get("duck", _DEFAULT_STATE["duck"])),

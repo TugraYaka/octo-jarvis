@@ -20,6 +20,18 @@ SERVICE_ID = "jarvis-tts"
 IS_MAC = paths.IS_MAC
 IS_WIN = paths.IS_WIN
 
+SUPPORTED_LANGS = frozenset(
+    ["en", "es", "fr", "de", "it", "pt", "pl", "tr", "ru", "nl", "cs", "ar", "zh-cn", "hu", "ko", "ja", "hi"]
+)
+_SCRIPT_LANGS = (
+    (re.compile("[\u3040-\u30ff]"), "ja"),
+    (re.compile("[\uac00-\ud7af]"), "ko"),
+    (re.compile("[\u4e00-\u9fff]"), "zh-cn"),
+    (re.compile("[\u0900-\u097f]"), "hi"),
+    (re.compile("[\u0600-\u06ff]"), "ar"),
+    (re.compile("[\u0400-\u04ff]"), "ru"),
+)
+
 voice_enabled = ttsinstall.is_installed()
 server_disabled = False
 _start_lock = threading.Lock()
@@ -309,7 +321,21 @@ def _worker() -> None:
                 on_error(e)
 
 
-def speak(text: str, lang: str = "tr") -> None:
+def resolve_lang(tag: str | None, text: str = "") -> str:
+    code = (tag or "").strip().lower().replace("_", "-")
+    if code in ("zh", "zh-hans"):
+        code = "zh-cn"
+    if code in SUPPORTED_LANGS:
+        return code
+    if code[:2] in SUPPORTED_LANGS and code[:2] != "zh":
+        return code[:2]
+    for pattern, code in _SCRIPT_LANGS:
+        if pattern.search(text):
+            return code
+    return "en"
+
+
+def speak(text: str, lang: str = "en") -> None:
     global _worker_started
     if not voice_enabled or server_disabled:
         return

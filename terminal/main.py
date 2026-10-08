@@ -31,7 +31,7 @@ from textual.widgets.option_list import Option
 from core import stt
 from core import tts
 from core.client import is_auth_error, validate_key
-from core.gemini_client import ask, get_thinking_level, set_thinking_level, warmup
+from core.gemini_client import ask, get_reply_lang, get_thinking_level, set_thinking_level, warmup
 from core.memory import reset_memory, list_memory, forget_memory
 from core.search_mode import set_google_online, set_duck_online, is_google_online, is_duck_online
 from core.stt import listen, listen_stream
@@ -44,8 +44,6 @@ BANNER = r"""
 ╚█████╔╝ ██║  ██║ ██║  ██║  ╚████╔╝  ██║ ███████║
  ╚════╝  ╚═╝  ╚═╝ ╚═╝  ╚═╝   ╚═══╝   ╚═╝ ╚══════╝
 """.strip("\n")
-
-VERSION = "Prototype v2"
 
 COMMANDS = [
     ("/turndefaults", "", "Reset to default settings"),
@@ -198,7 +196,7 @@ class JarvisApp(App):
                 "[bold]JARVIS {version}[/bold]\n"
                 "[dim]Gemini · thinking: {level}[/dim]\n"
                 "[dim]{cwd}[/dim]".format(
-                    version=VERSION, level=get_thinking_level(), cwd=os.getcwd()
+                    version=paths.VERSION, level=get_thinking_level(), cwd=os.getcwd()
                 ),
                 id="header",
             )
@@ -721,7 +719,7 @@ class JarvisApp(App):
                 log.write("[red]●[/red] [red]Usage: /speak <text>[/red]")
                 return
             log.write("[dim]Speaking...[/dim]")
-            tts.speak(speech_text, lang="tr")
+            tts.speak(speech_text, lang=tts.resolve_lang(None, speech_text))
             return
 
         if lowered == "/mictest":
@@ -739,7 +737,7 @@ class JarvisApp(App):
     def _speak(self, speech_text: str) -> None:
         log = self.query_one("#log", RichLog)
         try:
-            tts.speak(speech_text, lang="tr")
+            tts.speak(speech_text, lang=tts.resolve_lang(None, speech_text))
         except Exception as e:
             self.call_from_thread(log.write, f"[green]●[/green] TTS error ({escape(str(e))}).")
 
@@ -828,7 +826,8 @@ class JarvisApp(App):
         self.call_from_thread(self._write_reply, reply, elapsed)
         try:
             is_notice = reply.startswith(("[red]", "[yellow]"))
-            tts.speak(Text.from_markup(reply).plain if is_notice else reply, lang="tr")
+            spoken = Text.from_markup(reply).plain if is_notice else reply
+            tts.speak(spoken, lang=tts.resolve_lang(None if is_notice else get_reply_lang(), spoken))
         except Exception as e:
             _log_exception("auto-speak")
             self.call_from_thread(

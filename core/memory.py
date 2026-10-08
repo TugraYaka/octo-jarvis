@@ -5,8 +5,15 @@ from concurrent.futures import ThreadPoolExecutor
 
 try:
     import fcntl
-except ImportError:  # Not available on Windows — locking is silently disabled
+except ImportError:
     fcntl = None
+
+try:
+    import msvcrt
+except ImportError:
+    msvcrt = None
+
+_LOCK_TIMEOUT = 30.0
 
 from core import paths
 from core.embeddings import embed
@@ -39,15 +46,38 @@ class _locked:
 
     def __enter__(self):
         os.makedirs(os.path.dirname(_LOCK_PATH), exist_ok=True)
-        self._fh = open(_LOCK_PATH, "w")
-        if fcntl is not None:
-            fcntl.flock(self._fh, fcntl.LOCK_EX)
+        self._fh = open(_LOCK_PATH, "a+")
+        try:
+            if fcntl is not None:
+                fcntl.flock(self._fh, fcntl.LOCK_EX)
+            elif msvcrt is not None:
+                self._lock_windows()
+        except BaseException:
+            self._fh.close()
+            raise
         return self
 
+    def _lock_windows(self) -> None:
+        deadline = time.monotonic() + _LOCK_TIMEOUT
+        while True:
+            self._fh.seek(0)
+            try:
+                msvcrt.locking(self._fh.fileno(), msvcrt.LK_NBLCK, 1)
+                return
+            except OSError:
+                if time.monotonic() > deadline:
+                    raise
+                time.sleep(0.05)
+
     def __exit__(self, *exc_info):
-        if fcntl is not None:
-            fcntl.flock(self._fh, fcntl.LOCK_UN)
-        self._fh.close()
+        try:
+            if fcntl is not None:
+                fcntl.flock(self._fh, fcntl.LOCK_UN)
+            elif msvcrt is not None:
+                self._fh.seek(0)
+                msvcrt.locking(self._fh.fileno(), msvcrt.LK_UNLCK, 1)
+        finally:
+            self._fh.close()
         return False
 
 
@@ -94,15 +124,29 @@ def _ranked_score(query_embedding: list[float], entry: dict) -> float:
     return _score(query_embedding, entry) * (0.85 + 0.15 * _recency_weight(entry))
 
 
+def _preserve_unreadable() -> None:
+    backup = f"{MEMORY_PATH}.corrupt"
+    try:
+        if not os.path.exists(backup):
+            os.replace(MEMORY_PATH, backup)
+            _log(f"[memory] unreadable memory file moved to {backup}")
+    except OSError:
+        pass
+
+
 def _load_entries() -> list[dict]:
     if not os.path.exists(MEMORY_PATH):
         return []
     try:
         with open(MEMORY_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
-    except (json.JSONDecodeError, OSError):
+    except OSError:
+        return []
+    except json.JSONDecodeError:
+        _preserve_unreadable()
         return []
     if not isinstance(data, list):
+        _preserve_unreadable()
         return []
     return [
         e for e in data

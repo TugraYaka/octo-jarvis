@@ -1,5 +1,4 @@
 import os
-import sys
 
 from google.genai import types
 
@@ -17,7 +16,6 @@ _LOG_PATH = paths.SEARCH_LOG
 
 
 def _log_failure(text: str, kind: str, error: Exception) -> None:
-    print(f"[memory] embedding failed: {error}", file=sys.stderr)
     try:
         os.makedirs(os.path.dirname(_LOG_PATH), exist_ok=True)
         with open(_LOG_PATH, "a", encoding="utf-8") as f:

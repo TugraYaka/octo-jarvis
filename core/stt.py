@@ -20,7 +20,7 @@ SPEECH_MARGIN = 3.0
 MIN_THRESHOLD = 0.005
 TRIM_PADDING_BLOCKS = 4
 CPU_THREADS = min(10, os.cpu_count() or 4)
-LANGUAGE = "tr"
+LANGUAGE = os.environ.get("JARVIS_STT_LANGUAGE") or None
 
 def _local_model_path():
     pattern = os.path.join(
@@ -74,7 +74,7 @@ def warmup():
         return
     model = _get_model()
     silence = np.zeros(SAMPLE_RATE, dtype=np.float32)
-    list(model.transcribe(silence, language="tr", vad_filter=True, beam_size=1)[0])
+    list(model.transcribe(silence, language=LANGUAGE, vad_filter=True, beam_size=1)[0])
 
 
 def _trim(frames: list, loud_flags: list) -> np.ndarray:
