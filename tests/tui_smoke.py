@@ -39,10 +39,15 @@ async def run():
             assert app.theme == "jarvis-dark"
             await pilot.press("enter")
             assert config.get("theme") == "dark"
+        assert app._mode == "menu", f"expected provider menu, mode={app._mode}"
+        assert "Which AI should JARVIS use?" in log_text(app)
+        await pilot.press("enter")
         assert app._mode == "key", f"expected key prompt, mode={app._mode}"
         assert "Enter the API key." in log_text(app)
-        assert app.query_one("#input", Input).password is True
-        app.query_one("#input", Input).value = "not-a-real-key-for-tests"
+        keyinput = app.query_one("#keyinput", Input)
+        assert keyinput.display and keyinput.password is False
+        assert not app.query_one("#input", Input).display
+        keyinput.value = "not-a-real-key-for-tests"
         await pilot.press("enter")
         assert await wait_for(app, lambda: "rejected" in log_text(app), 30), "fake key was not rejected"
         assert app._mode == "key"

@@ -52,7 +52,7 @@ check("setup", "[ ok ] Environment" in r.stdout and "[ ok ] Web browsing browser
 check("setup does not install tts without --with-tts", "Skipped. Add --with-tts" in r.stdout or "already installed" in r.stdout, r.stdout)
 
 r = jarvis("doctor")
-check("doctor after setup", "[ ok ] Environment" in r.stdout and "[FAIL] Gemini API key" in r.stdout, r.stdout + r.stderr)
+check("doctor after setup", "[ ok ] Environment" in r.stdout and "[FAIL] API key" in r.stdout, r.stdout + r.stderr)
 
 r = run([venv_python(), os.path.join(ROOT, "tests", "tui_smoke.py")], cwd=ROOT)
 check("chat asks for a key and rejects a fake one", r.returncode == 0 and "tui ok" in r.stdout, r.stdout + r.stderr)

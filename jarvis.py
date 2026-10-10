@@ -463,15 +463,36 @@ def _ask_text(prompt):
         return ""
 
 
+def _choose_provider():
+    names = list(config.PROVIDERS)
+    say("Which AI should JARVIS use?")
+    for i, name in enumerate(names, 1):
+        say("  %d) %s" % (i, config.PROVIDERS[name]["label"]))
+    current = names.index(config.get_provider()) + 1
+    for _ in range(3):
+        choice = _ask_text("Choose 1-%d [%d]: " % (len(names), current))
+        if not choice:
+            return names[current - 1]
+        if choice.isdigit() and 1 <= int(choice) <= len(names):
+            return names[int(choice) - 1]
+        say("Invalid choice.")
+    return names[current - 1]
+
+
 def _setup_key(py):
-    if config.get_api_key():
-        say("Gemini API key: already set.")
+    name = _choose_provider()
+    config.set_provider(name)
+    label = config.PROVIDERS[name]["label"]
+    if name == "custom":
+        say("Custom server: JARVIS will ask for its URL and model on first start.")
         return
-    say("A Gemini API key is needed. Create a free one at https://aistudio.google.com/apikey")
+    if config.provider_api_key(name):
+        say("%s API key: already set." % label)
+        return
     for _ in range(3):
         try:
             if sys.stdin.isatty():
-                key = getpass.getpass("Paste your key (hidden, Enter to skip): ").strip()
+                key = getpass.getpass("Paste your API key (hidden, Enter to skip): ").strip()
             else:
                 key = sys.stdin.readline().strip()
         except (EOFError, KeyboardInterrupt):
@@ -480,14 +501,14 @@ def _setup_key(py):
         if not key:
             say("Skipped. JARVIS will ask for it on first start.")
             return
-        config.set_api_key(key)
-        code, message = doctor.check_key(py)
+        config.set_provider_api_key(name, key)
+        code, message = doctor.check_key(py, name)
         if code == 0:
             say("Key accepted.")
             return
         if code == 2:
-            config.clear_api_key()
-            say("Google rejected that key. Try again.")
+            config.set_provider_api_key(name, None)
+            say("%s rejected that key. Try again." % label)
         else:
             say("Key saved, but it could not be verified right now (%s)." % message)
             return
@@ -508,7 +529,7 @@ def cmd_setup(args):
     elif _ask_yes("      Make 'jarvis' work in every terminal?", auto):
         cmd_install()
 
-    say("3/7 Gemini API key")
+    say("3/7 AI provider and API key")
     _setup_key(py)
 
     say("4/7 Web browsing browser (about 150 MB)")

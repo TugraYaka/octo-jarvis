@@ -31,12 +31,12 @@ def _probe(py: str, code: str, timeout: int = 60):
     return result.returncode, (result.stdout or result.stderr).strip()
 
 
-def check_key(py: str):
+def check_key(py: str, provider: str = "gemini"):
     code = (
         "import sys\n"
-        "from core.client import validate_key, is_auth_error\n"
+        "from core.llm import validate_key, is_auth_error\n"
         "try:\n"
-        "    validate_key()\n"
+        f"    validate_key({provider!r})\n"
         "except Exception as e:\n"
         "    print(str(e)[:150]); sys.exit(2 if is_auth_error(e) else 3)\n"
     )
@@ -73,27 +73,30 @@ def run_checks(venv_py: str, venv_ok: bool, deps_current: bool) -> list:
     online = _online()
     add(OK if online else FAIL, "Internet", f"{API_HOST} reachable" if online else f"cannot reach {API_HOST}")
 
-    key = config.get_api_key()
     provider = config.get_provider()
-    if provider != "gemini":
+    label = config.PROVIDERS[provider]["label"]
+    if provider == "custom":
         ready = config.provider_ready(provider)
-        add(OK if ready else FAIL, "AI provider", f"{config.PROVIDERS[provider]['label']} "
-            f"({config.provider_model(provider)}), {'configured' if ready else 'not configured. Start jarvis and use /setkey'}")
-    if not key and provider != "gemini":
-        add(WARN, "Gemini API key", "not set (optional: enables semantic memory search; keyword search is used instead)")
-    elif not key:
-        add(FAIL, "Gemini API key", "not set. Run: jarvis setup (or start jarvis)")
-    elif not (venv_ok and online):
-        add(WARN, "Gemini API key", "present, could not be verified (no environment or no internet)")
+        add(OK if ready else FAIL, "AI provider", f"{label} ({config.provider_model(provider)}), "
+            f"{'configured' if ready else 'not configured. Start jarvis and use /provider'}")
     else:
-        source = f"saved in {config.key_storage()}" if config.stored_api_key() else "environment variable"
-        code, message = check_key(venv_py)
-        if code == 0:
-            add(OK, "Gemini API key", f"{source}, accepted by Google")
-        elif code == 2:
-            add(FAIL, "Gemini API key", f"{source}, rejected by Google. Use /logout in JARVIS to replace it")
+        add(OK, "AI provider", f"{label} ({config.provider_model(provider)})")
+        if not config.provider_api_key(provider):
+            add(FAIL, "API key", f"{label} key not set. Run: jarvis setup (or start jarvis)")
+        elif not (venv_ok and online):
+            add(WARN, "API key", "present, could not be verified (no environment or no internet)")
         else:
-            add(WARN, "Gemini API key", f"{source}, could not be verified: {message}")
+            env_only = config.provider_env_key(provider) == config.provider_api_key(provider)
+            source = "environment variable" if env_only else f"saved in {config.key_storage()}"
+            code, message = check_key(venv_py, provider)
+            if code == 0:
+                add(OK, "API key", f"{source}, accepted by {label}")
+            elif code == 2:
+                add(FAIL, "API key", f"{source}, rejected by {label}. Use /logout in JARVIS to replace it")
+            else:
+                add(WARN, "API key", f"{source}, could not be verified: {message}")
+    if provider != "gemini" and not config.get_api_key():
+        add(WARN, "Memory search", "no Gemini key (optional: enables semantic memory search; keyword search is used instead)")
 
     on_path = shutil.which("jarvis")
     add(OK if on_path else WARN, "jarvis command", on_path or "not on PATH. Run: jarvis install")

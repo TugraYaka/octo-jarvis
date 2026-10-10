@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/TugraYaka/octo-jarvis/actions/workflows/ci.yml/badge.svg)](https://github.com/TugraYaka/octo-jarvis/actions/workflows/ci.yml)
 
-A personal AI assistant for the terminal, powered by Google Gemini.
+A personal AI assistant for the terminal, powered by Gemini, Claude, ChatGPT or your own model server.
 
 - Text chat with long-term memory
 - Web search (Google or DuckDuckGo) and a hidden browser for reading pages
@@ -18,7 +18,7 @@ A personal AI assistant for the terminal, powered by Google Gemini.
 
 ## Requirements
 
-- A Gemini API key, free at <https://aistudio.google.com/apikey>
+- An API key for one of the supported AI providers: Gemini, Claude, ChatGPT, or a custom OpenAI-compatible server (Ollama, LM Studio, OpenRouter, ...)
 - Internet access
 - Optional: a microphone for `/talk`
 - Linux only: `libportaudio2` for the microphone (`sudo apt install libportaudio2`) and one of `paplay`, `aplay` or `ffplay` for spoken replies
@@ -69,7 +69,7 @@ Intel Macs and other CPU types have no ready-made build yet. Use the developer i
 
 ## First start
 
-1. Run `jarvis`. If there is no Gemini API key yet, the chat asks for it before anything else. The key is stored only on your computer, in a file only you can read. The `GEMINI_API_KEY` environment variable also works.
+1. Run `jarvis`. If no AI provider is set up yet, the chat first asks which one to use (Gemini, Claude, ChatGPT or Custom), then asks for its API key. The key is stored only on your computer, in a file only you can read. The `GEMINI_API_KEY`, `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` environment variables also work.
 2. Google checks the key. A wrong key is rejected right away. If a saved key stops working later, JARVIS answers with a red error because it cannot respond without it.
 3. Type `/logout` at any time to delete the saved key and enter a new one.
 
@@ -88,7 +88,7 @@ Type `/` to open the command list (arrow keys and Enter to pick).
 
 | Command | What it does |
 |---|---|
-| `/logout` | Remove the saved Gemini API key and ask for a new one |
+| `/logout` | Remove the saved API key and ask for a new one |
 | `/think`, `/think high`, `/think low` | Show or set the thinking level |
 | `/google`, `/duckduck` | Show search engine status |
 | `/onlinegoogle`, `/offlinegoogle` | Enable or disable Google search |
@@ -199,7 +199,7 @@ Set `JARVIS_HOME` to use another folder. Inside: `config.json` (key and settings
 - **No sound:** run `/voice`; if the server is off, `/turnontts`. On Linux install `pulseaudio-utils`, `alsa-utils` or `ffmpeg`.
 - **Web browsing fails on Linux:** Chromium needs its usual system libraries (nss, atk, gbm, alsa). On a from-source install `sudo <data folder>/venv/bin/python -m playwright install-deps chromium` installs them.
 - **Downloads are slow or stuck:** run `jarvis setup` again, it continues where it stopped.
-- **Other errors:** see `logs/debug.log` in the data folder. Yellow messages are Gemini or quota warnings, red ones are local errors.
+- **Other errors:** see `logs/debug.log` in the data folder. Yellow messages are AI provider or quota warnings, red ones are local errors.
 
 ---
 
@@ -259,7 +259,7 @@ This produces `dist/jarvis-<system>-<cpu>.tar.gz` (`.zip` on Windows) and a `.sh
 ```
 jarvis.py               launcher: setup, doctor, install/uninstall, tts and personal commands
 jarvis.cmd              Windows shim for running from the source folder
-core/                   Gemini client, memory, search, browser, speech, TTS client, doctor
+core/                   AI provider clients, memory, search, browser, speech, TTS client, doctor
 terminal/main.py        the chat interface
 tts_server/             local Chatterbox TTS server and its pinned requirements
 tests/                  smoke tests

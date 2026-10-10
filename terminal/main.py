@@ -141,14 +141,7 @@ CUSTOM_PRESETS = [
     ("http://localhost:1234/v1", "LM Studio  ·  http://localhost:1234/v1"),
     ("other", "Other server  ·  type its URL (OpenRouter, Groq, ...)"),
 ]
-MENU_PLACEHOLDER = "Use up/down and Enter to choose, Esc to cancel..."
-
-
-KEY_URLS = {
-    "gemini": "https://aistudio.google.com/apikey",
-    "claude": "https://console.anthropic.com/settings/keys",
-    "openai": "https://platform.openai.com/api-keys",
-}
+MENU_EXIT = "__exit__"
 
 
 PROFILE_STEPS = [
@@ -252,6 +245,20 @@ class JarvisApp(App):
         margin: 0 2;
     }
 
+    #keybox {
+        display: none;
+        height: auto;
+        margin: 0 2;
+    }
+
+    #keylabel {
+        padding: 0 1;
+    }
+
+    #keyinput {
+        border: round $primary;
+    }
+
     #footer {
         color: $text-muted;
         padding: 0 2;
@@ -294,6 +301,9 @@ class JarvisApp(App):
                 yield Static(id="themepreview")
                 yield OptionList(id="cmdlist")
                 yield Input(placeholder="Type a message...", id="input")
+                with Vertical(id="keybox"):
+                    yield Static("[bold $primary]API key[/]  [dim]Enter to save · 'cancel' to abort[/dim]", id="keylabel")
+                    yield Input(placeholder="Paste your API key...", id="keyinput")
                 yield Rule()
                 yield Static(
                     "[dim]Type 'exit' to quit  ·  /provider /model /search /think /theme /talk[/dim]",
@@ -324,23 +334,31 @@ class JarvisApp(App):
     def _show_menu(self, title: str, options: list, on_choose, current=None) -> None:
         self._menu = on_choose
         self._mode = "menu"
-        self.query_one("#log", RichLog).write(f"[bold]{escape(title)}[/bold]")
+        log = self.query_one("#log", RichLog)
+        log.write(f"[bold]{escape(title)}[/bold]")
+        log.write("[dim]Use up/down and Enter to choose, Esc to cancel.[/dim]")
         cmdlist = self.query_one("#cmdlist", OptionList)
         cmdlist.clear_options()
         for key, label in options:
             cmdlist.add_option(Option(f"{'✔ ' if key == current else '  '}{label}", id=key))
+        cmdlist.add_option(Option("  Exit  ·  quit JARVIS", id=MENU_EXIT))
         cmdlist.highlighted = next((i for i, (key, _) in enumerate(options) if key == current), 0)
         cmdlist.display = True
         inp = self.query_one("#input", Input)
         inp.value = ""
-        inp.placeholder = MENU_PLACEHOLDER
-        inp.focus()
+        inp.display = False
+        cmdlist.focus()
 
     def _close_menu(self, choice: str | None) -> None:
         on_choose, self._menu = self._menu, None
         self._mode = None
         self.query_one("#cmdlist", OptionList).display = False
-        self.query_one("#input", Input).placeholder = "Type a message..."
+        inp = self.query_one("#input", Input)
+        inp.display = True
+        inp.focus()
+        if choice == MENU_EXIT:
+            self._quit()
+            return
         if choice is None or on_choose is None:
             self.query_one("#log", RichLog).write("[dim]Unchanged.[/dim]")
             return
@@ -533,7 +551,7 @@ class JarvisApp(App):
         if config.provider_ready(llm.provider()):
             self._continue_setup()
         else:
-            self._prompt_for_key()
+            self._provider_menu()
 
     def _detect_dark_terminal(self) -> bool:
         fgbg = os.environ.get("COLORFGBG", "")
@@ -563,7 +581,7 @@ class JarvisApp(App):
     def _theme_preview(self) -> Text:
         dark = self.current_theme.dark
         del_bg, add_bg, del_fg, add_fg = DIFF_COLORS[(self._diff_palette, dark)]
-        keyword = f"bold {self.current_theme.primary}"
+        keyword = f"bold {self.current_theme.primary.removeprefix('ansi_')}"
         out = Text()
         out.append("◆ Display calibration preview\n\n", style="bold")
         out.append(" 1   ", style="dim")
@@ -638,19 +656,13 @@ class JarvisApp(App):
     def _prompt_for_key(self) -> None:
         log = self.query_one("#log", RichLog)
         name = llm.provider()
-        label = config.PROVIDERS[name]["label"]
         if name == "custom" and not config.provider_ready(name):
             self._custom_setup()
             return
-        self._mode = "key"
-        inp = self.query_one("#input", Input)
-        inp.password = True
-        inp.placeholder = f"Paste your {label} API key..."
-        self.query_one("#cmdlist", OptionList).display = False
+        self._start_key_mode()
         log.write("[yellow]●[/yellow] Enter the API key.")
         log.write(
-            f"[dim]Get a key at {KEY_URLS.get(name, 'your provider')} and paste it below. "
-            "It is stored only on this computer. Use /logout later to remove it, "
+            "[dim]Paste it below. It is stored only on this computer. Use /logout later to remove it, "
             "or type 'cancel' to switch provider instead.[/dim]"
         )
 
@@ -678,11 +690,22 @@ class JarvisApp(App):
             "Check it and paste it again.[/red]"
         )
 
+    def _start_key_mode(self) -> None:
+        self._mode = "key"
+        self.query_one("#cmdlist", OptionList).display = False
+        self.query_one("#input", Input).display = False
+        self.query_one("#keybox").display = True
+        keyinput = self.query_one("#keyinput", Input)
+        keyinput.value = ""
+        keyinput.focus()
+
     def _end_key_mode(self) -> None:
         self._mode = None
+        self.query_one("#keybox").display = False
+        self.query_one("#keyinput", Input).value = ""
         inp = self.query_one("#input", Input)
-        inp.password = False
-        inp.placeholder = "Type a message..."
+        inp.display = True
+        inp.focus()
 
     def _key_accepted(self, warning: str | None) -> None:
         log = self.query_one("#log", RichLog)
@@ -819,9 +842,6 @@ class JarvisApp(App):
             return
         self._navigated = False
 
-        if self._mode == "key":
-            # API keys never start with "/", so show typed commands in clear text.
-            event.input.password = not value.startswith("/")
         if self._mode not in (None, "key") or not value.startswith("/"):
             cmdlist.display = False
             return
@@ -1161,11 +1181,7 @@ class JarvisApp(App):
             if name == "custom" and not config.provider_ready(name):
                 self._prompt_for_key()
                 return
-            self._mode = "key"
-            inp = self.query_one("#input", Input)
-            inp.password = True
-            inp.placeholder = f"Paste your {config.PROVIDERS[name]['label']} API key..."
-            self.query_one("#cmdlist", OptionList).display = False
+            self._start_key_mode()
             log.write("[dim]Paste the API key below, or type 'cancel'.[/dim]")
             return
 
