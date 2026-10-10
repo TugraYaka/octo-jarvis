@@ -11,6 +11,7 @@ import queue
 import re
 import concurrent.futures
 import json
+import secrets
 
 from core import config, paths, ttsinstall
 
@@ -21,15 +22,18 @@ IS_MAC = paths.IS_MAC
 IS_WIN = paths.IS_WIN
 
 SUPPORTED_LANGS = frozenset(
-    ["en", "es", "fr", "de", "it", "pt", "pl", "tr", "ru", "nl", "cs", "ar", "zh-cn", "hu", "ko", "ja", "hi"]
+    ["ar", "da", "de", "el", "en", "es", "fi", "fr", "he", "hi", "it", "ja", "ko", "ms",
+     "nl", "no", "pl", "pt", "ru", "sv", "sw", "tr", "zh"]
 )
 _SCRIPT_LANGS = (
     (re.compile("[\u3040-\u30ff]"), "ja"),
     (re.compile("[\uac00-\ud7af]"), "ko"),
-    (re.compile("[\u4e00-\u9fff]"), "zh-cn"),
+    (re.compile("[\u4e00-\u9fff]"), "zh"),
     (re.compile("[\u0900-\u097f]"), "hi"),
     (re.compile("[\u0600-\u06ff]"), "ar"),
     (re.compile("[\u0400-\u04ff]"), "ru"),
+    (re.compile("[\u0590-\u05ff]"), "he"),
+    (re.compile("[\u0370-\u03ff]"), "el"),
 )
 
 voice_enabled = ttsinstall.is_installed()
@@ -120,6 +124,7 @@ def _launch() -> None:
     if runtime is None:
         raise RuntimeError("TTS server is not installed. Run /installtts to install it.")
     ttsinstall.ensure_server_files()
+    server_token()
     overrides = ttsinstall.server_env(runtime)
     if IS_MAC:
         exports = " ".join(f"{key}={shlex.quote(value)}" for key, value in overrides.items())
@@ -214,12 +219,29 @@ def _split_sentences(text: str) -> list:
     return chunks
 
 
+def server_token() -> str:
+    """Shared secret the TTS server requires, kept in a file only this user can read."""
+    try:
+        with open(paths.TTS_TOKEN_PATH, encoding="utf-8") as f:
+            token = f.read().strip()
+        if token:
+            return token
+    except OSError:
+        pass
+    paths.ensure_dirs()
+    os.makedirs(os.path.dirname(paths.TTS_TOKEN_PATH), mode=0o700, exist_ok=True)
+    token = secrets.token_urlsafe(32)
+    with paths.open_private(paths.TTS_TOKEN_PATH) as f:
+        f.write(token)
+    return token
+
+
 def _synthesize(text: str, lang: str) -> bytes:
     payload = json.dumps({"text": text, "lang": lang}).encode()
     req = urllib.request.Request(
         SERVER_URL,
         data=payload,
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", "X-JARVIS-Token": server_token()},
         method="POST",
     )
     try:
@@ -323,11 +345,11 @@ def _worker() -> None:
 
 def resolve_lang(tag: str | None, text: str = "") -> str:
     code = (tag or "").strip().lower().replace("_", "-")
-    if code in ("zh", "zh-hans"):
-        code = "zh-cn"
+    if code in ("nb", "nn"):
+        code = "no"
     if code in SUPPORTED_LANGS:
         return code
-    if code[:2] in SUPPORTED_LANGS and code[:2] != "zh":
+    if code[:2] in SUPPORTED_LANGS:
         return code[:2]
     for pattern, code in _SCRIPT_LANGS:
         if pattern.search(text):

@@ -2,7 +2,7 @@ import os
 import sys
 
 APP_NAME = "JARVIS"
-VERSION = "0.3.1"
+VERSION = "1.4.0-alpha"
 
 IS_WIN = sys.platform == "win32"
 IS_MAC = sys.platform == "darwin"
@@ -30,6 +30,7 @@ LOG_DIR = os.path.join(DATA_DIR, "logs")
 DEBUG_LOG = os.path.join(LOG_DIR, "debug.log")
 SEARCH_LOG = os.path.join(LOG_DIR, "search.log")
 MEMORY_PATH = os.path.join(DATA_DIR, "memory.json")
+CHATS_DIR = os.path.join(DATA_DIR, "chats")
 SEARCH_MODE_PATH = os.path.join(DATA_DIR, "search_mode.json")
 SEARCH_USAGE_PATH = os.path.join(DATA_DIR, "search_usage.json")
 BROWSER_PROFILE_DIR = os.path.join(DATA_DIR, "browser_profile")
@@ -42,6 +43,7 @@ TTS_DIR = os.path.join(DATA_DIR, "tts")
 TTS_VENV_DIR = os.path.join(TTS_DIR, "venv")
 TTS_HOME = os.path.join(TTS_DIR, "cache")
 TTS_LOG = os.path.join(LOG_DIR, "tts_server.log")
+TTS_TOKEN_PATH = os.path.join(TTS_DIR, "token")
 DEFAULT_ASSETS_DIR = os.path.join(DATA_DIR, "assets")
 TTS_SERVER_DIR = os.path.join(TTS_DIR, "server")
 TTS_SERVER_SCRIPT = os.path.join(TTS_SERVER_DIR, "server.py")
@@ -77,8 +79,57 @@ def venv_python(venv_dir: str) -> str:
     return os.path.join(venv_dir, "bin", "python")
 
 
+_WIN_ACL_MARKER = ".private-acl"
+
+
+def _restrict_windows_acl(path: str) -> None:
+    """Drop inherited permissions so only this user and SYSTEM can open the folder."""
+    marker = os.path.join(path, _WIN_ACL_MARKER)
+    if os.path.exists(marker):
+        return
+    import subprocess
+
+    user = os.environ.get("USERNAME", "")
+    domain = os.environ.get("USERDOMAIN", "")
+    if not user:
+        return
+    account = f"{domain}\\{user}" if domain else user
+    result = subprocess.run(
+        ["icacls", path, "/inheritance:r", "/grant:r", f"{account}:(OI)(CI)F", "*S-1-5-18:(OI)(CI)F"],
+        capture_output=True, text=True,
+    )
+    if result.returncode == 0:
+        with open(marker, "w", encoding="utf-8"):
+            pass
+
+
+def _make_private_dir(path: str) -> None:
+    os.makedirs(path, mode=0o700, exist_ok=True)
+    if os.path.abspath(path) == os.path.expanduser("~"):
+        return
+    try:
+        if IS_WIN:
+            _restrict_windows_acl(path)
+        else:
+            os.chmod(path, 0o700)
+    except OSError:
+        pass
+
+
 def ensure_dirs() -> None:
-    os.makedirs(LOG_DIR, exist_ok=True)
+    _make_private_dir(DATA_DIR)
+    os.makedirs(LOG_DIR, mode=0o700, exist_ok=True)
+    if not IS_WIN:
+        try:
+            os.chmod(LOG_DIR, 0o700)
+        except OSError:
+            pass
+
+
+def open_private(path: str):
+    """Open a file for writing that only the current user can read."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    return os.fdopen(fd, "w", encoding="utf-8")
 
 
 def apply_cache_env() -> None:

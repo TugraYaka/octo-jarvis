@@ -1,4 +1,2 @@
-coqui-tts[codec]==0.27.5
-torch==2.14.1
-torchaudio==2.11.0
-transformers==4.57.6
+chatterbox-tts==0.1.7
+setuptools<81

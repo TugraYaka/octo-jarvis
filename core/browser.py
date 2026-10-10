@@ -1,15 +1,16 @@
 import atexit
-import ipaddress
+from contextlib import contextmanager
 import locale
 import os
 import re
-import socket
 import subprocess
 import sys
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 
 from core import paths
+from core.safe_proxy import BlockedURLError, SafeProxy, port_block_reason, resolve_public
 
 paths.apply_cache_env()
 
@@ -26,7 +27,7 @@ LIVE_PROFILE_DIR = paths.BROWSER_PROFILE_DIR
 _pw_thread = ThreadPoolExecutor(max_workers=1, thread_name_prefix="playwright")
 
 _INJECTION_PATTERNS = [
-    re.compile(p, re.IGNORECASE) for p in (
+    re.compile(p, re.IGNORECASE | re.MULTILINE) for p in (
         r"ignore (all |any )?(previous|prior|above) instructions",
         r"disregard (all |any )?(previous|prior|above)",
         r"\byou are now\b",
@@ -37,11 +38,25 @@ _INJECTION_PATTERNS = [
         r"\bjailbreak\b",
         r"\bdan mode\b",
         r"\bdo anything now\b",
+        r"(forget|override|bypass) (all |any |your )?(previous |prior )?(instructions|rules|guidelines)",
+        r"\bdeveloper mode\b",
+        r"<\|?(im_start|im_end|system|endoftext)\|?>",
+        r"^\s*#{2,}\s*(system|instructions?)\b",
+        r"\[(system|inst)\]",
+        r"(send|post|upload|leak) (the |your |all )?(api key|system prompt|saved memory|chat history)",
     )
 ]
+_INVISIBLE_RE = re.compile(r"[\u00ad\u200b-\u200f\u2028-\u202e\u2060-\u2064\ufeff]")
+
+
+def _normalize(text: str) -> str:
+    text = unicodedata.normalize("NFKC", text)
+    text = _INVISIBLE_RE.sub("", text)
+    return re.sub(r"[ \t]+", " ", text)
 
 
 def _looks_like_injection(text: str) -> bool:
+    text = _normalize(text)
     return any(p.search(text) for p in _INJECTION_PATTERNS)
 
 
@@ -85,10 +100,6 @@ def _log(message: str) -> None:
         pass
 
 
-class BlockedURLError(Exception):
-    pass
-
-
 def _is_missing_browser(error: Exception) -> bool:
     text = str(error)
     return "Executable doesn't exist" in text or "playwright install" in text
@@ -116,14 +127,28 @@ def _assert_url_allowed(url: str) -> None:
     host = parsed.hostname
     if not host:
         raise BlockedURLError("No hostname in URL")
+    if parsed.username or parsed.password:
+        raise BlockedURLError("Credentials in URLs are not allowed")
     try:
-        infos = socket.getaddrinfo(host, None)
-    except socket.gaierror as e:
-        raise BlockedURLError(f"Could not resolve host: {e}")
-    for info in infos:
-        ip = ipaddress.ip_address(info[4][0])
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
-            raise BlockedURLError(f"Blocked internal address: {ip}")
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    except ValueError:
+        raise BlockedURLError("Invalid port in URL")
+    reason = port_block_reason(port)
+    if reason:
+        raise BlockedURLError(reason)
+    resolve_public(host)
+
+
+@contextmanager
+def _blocked_as_error(proxy: SafeProxy):
+    """Turn a browser failure caused by the safe proxy refusing a hop into BlockedURLError."""
+    before = proxy.block_count
+    try:
+        yield
+    except Exception as e:
+        if proxy.block_count > before:
+            raise BlockedURLError(proxy.last_block) from e
+        raise
 
 
 class BrowserSession:
@@ -143,12 +168,22 @@ class BrowserSession:
         self._browser = None
         self._context = None
         self._page = None
+        self._proxy = None
 
     def _launch(self) -> None:
-        args = ["--disable-blink-features=AutomationControlled"]
+        args = [
+            "--disable-blink-features=AutomationControlled",
+            "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+            "--enforce-webrtc-ip-permission-check",
+        ]
         if self._headless:
             args += ["--mute-audio", "--autoplay-policy=user-gesture-required"]
+        if self._proxy is None:
+            self._proxy = SafeProxy()
         context_kwargs = dict(
+            proxy=self._proxy.playwright_config(),
+            accept_downloads=False,
+            service_workers="block",
             user_agent=_user_agent(),
             viewport={"width": 1280, "height": 800},
             locale=_browser_locale(),
@@ -168,8 +203,10 @@ class BrowserSession:
         self._page = self._context.pages[0] if self._context.pages else self._context.new_page()
 
     def _ensure_page(self):
-        if self._page is not None:
+        if self._page is not None and not self._page.is_closed():
             return self._page
+        if self._page is not None:
+            self.close()
         self._playwright = sync_playwright().start()
         try:
             try:
@@ -180,8 +217,7 @@ class BrowserSession:
                 install_chromium()
                 self._launch()
         except Exception:
-            self._playwright.stop()
-            self._playwright = None
+            self.close()
             raise
         return self._page
 
@@ -250,7 +286,8 @@ class BrowserSession:
     def open(self, url: str) -> dict:
         _assert_url_allowed(url)
         page = self._ensure_page()
-        page.goto(url, wait_until="domcontentloaded")
+        with _blocked_as_error(self._proxy):
+            page.goto(url, wait_until="domcontentloaded")
         _assert_url_allowed(page.url)
         if _looks_like_challenge(page.title()):
             page.wait_for_timeout(4000)  # let Cloudflare/anti-bot JS challenge resolve
@@ -262,11 +299,31 @@ class BrowserSession:
             raise RuntimeError("No open page to click on. Call browser_open first.")
         page = self._page
         locator = page.get_by_text(target_text, exact=False).first
-        locator.click(timeout=NAV_TIMEOUT_MS)
-        page.wait_for_load_state("domcontentloaded", timeout=NAV_TIMEOUT_MS)
+        with _blocked_as_error(self._proxy):
+            locator.click(timeout=NAV_TIMEOUT_MS)
+            page.wait_for_load_state("domcontentloaded", timeout=NAV_TIMEOUT_MS)
         _assert_url_allowed(page.url)
         _log(f"[browser] click {target_text!r} -> {page.url!r}")
         return self._snapshot_settled()
+
+    def describe(self, target_text: str) -> str:
+        """Visible text, label and type of the element a click on target_text would hit."""
+        if self._page is None:
+            return ""
+        locator = self._page.get_by_text(target_text, exact=False).first
+        try:
+            if locator.count() == 0:
+                return ""
+            info = locator.evaluate(
+                """el => {
+                    const target = el.closest('button, a, input, [role=button], [type=submit]') || el;
+                    return [target.innerText || '', target.value || '', target.getAttribute('aria-label') || '',
+                            target.getAttribute('type') || '', target.tagName || ''].join(' ');
+                }"""
+            )
+        except Exception:
+            return ""
+        return " ".join(str(info).split())[:300]
 
     def scroll(self, direction: str) -> dict:
         if self._page is None:
@@ -310,16 +367,19 @@ class BrowserSession:
         return self._page.screenshot(type="png")
 
     def close(self) -> None:
-        if self._context is not None:
-            self._context.close()
-        if self._browser is not None:
-            self._browser.close()
-        if self._playwright is not None:
-            self._playwright.stop()
+        for target, method in ((self._context, "close"), (self._browser, "close"),
+                               (self._playwright, "stop"), (self._proxy, "stop")):
+            if target is None:
+                continue
+            try:
+                getattr(target, method)()
+            except Exception as e:
+                _log(f"[browser] {type(target).__name__}.{method} failed: {e}")
         self._browser = None
         self._context = None
         self._page = None
         self._playwright = None
+        self._proxy = None
         _log("[browser] session closed")
 
 
@@ -372,6 +432,17 @@ def browser_close() -> str:
 def browser_open_live(url: str) -> dict:
     """Open a URL in a real, visible Chrome window for the user to watch/take over."""
     return _run(lambda: _get_live_session().open(url))
+
+
+def live_current_url() -> str | None:
+    def current():
+        page = _live_session._page if _live_session is not None else None
+        return page.url if page is not None else None
+    return _run(current)
+
+
+def live_describe_target(target_text: str) -> str:
+    return _run(lambda: _get_live_session().describe(target_text) if _live_session is not None else "")
 
 
 def browser_click_live(target_text: str) -> dict:

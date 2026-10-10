@@ -52,3 +52,51 @@ def is_auth_error(exc: BaseException) -> bool:
 
 def validate_key() -> None:
     next(iter(get_client().models.list()), None)
+
+
+class ProviderHTTPError(RuntimeError):
+    def __init__(self, provider: str, status: int, body: str):
+        super().__init__(f"{provider} HTTP {status}: {body[:300]}")
+        self.status = status
+        self.body = body
+
+
+def is_provider_auth_error(exc: BaseException) -> bool:
+    if isinstance(exc, MissingKeyError):
+        return True
+    return isinstance(exc, ProviderHTTPError) and exc.status in (401, 403)
+
+
+def is_provider_transient(exc: BaseException) -> bool:
+    if isinstance(exc, (httpx.ReadTimeout, httpx.ConnectError, httpx.RemoteProtocolError)):
+        return True
+    return isinstance(exc, ProviderHTTPError) and (exc.status in (408, 429, 529) or exc.status >= 500)
+
+
+_rest_clients: dict = {}
+
+
+def rest_post(provider: str, url: str, headers: dict, payload: dict, read_timeout: float) -> dict:
+    response = _rest_client(read_timeout).post(url, headers=headers, json=payload)
+    if response.status_code >= 400:
+        raise ProviderHTTPError(provider, response.status_code, response.text)
+    return response.json()
+
+
+def rest_get(provider: str, url: str, headers: dict) -> dict:
+    response = _rest_client(30).get(url, headers=headers)
+    if response.status_code >= 400:
+        raise ProviderHTTPError(provider, response.status_code, response.text)
+    return response.json()
+
+
+def _rest_client(read_timeout: float) -> httpx.Client:
+    with _lock:
+        client = _rest_clients.get(read_timeout)
+        if client is None:
+            client = httpx.Client(
+                timeout=httpx.Timeout(read_timeout, connect=15),
+                verify=certifi.where(),
+            )
+            _rest_clients[read_timeout] = client
+        return client

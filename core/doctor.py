@@ -74,12 +74,19 @@ def run_checks(venv_py: str, venv_ok: bool, deps_current: bool) -> list:
     add(OK if online else FAIL, "Internet", f"{API_HOST} reachable" if online else f"cannot reach {API_HOST}")
 
     key = config.get_api_key()
-    if not key:
+    provider = config.get_provider()
+    if provider != "gemini":
+        ready = config.provider_ready(provider)
+        add(OK if ready else FAIL, "AI provider", f"{config.PROVIDERS[provider]['label']} "
+            f"({config.provider_model(provider)}), {'configured' if ready else 'not configured. Start jarvis and use /setkey'}")
+    if not key and provider != "gemini":
+        add(WARN, "Gemini API key", "not set (optional: enables semantic memory search; keyword search is used instead)")
+    elif not key:
         add(FAIL, "Gemini API key", "not set. Run: jarvis setup (or start jarvis)")
     elif not (venv_ok and online):
         add(WARN, "Gemini API key", "present, could not be verified (no environment or no internet)")
     else:
-        source = "saved" if config.stored_api_key() else "environment variable"
+        source = f"saved in {config.key_storage()}" if config.stored_api_key() else "environment variable"
         code, message = check_key(venv_py)
         if code == 0:
             add(OK, "Gemini API key", f"{source}, accepted by Google")
@@ -115,8 +122,8 @@ def run_checks(venv_py: str, venv_ok: bool, deps_current: bool) -> list:
         add(WARN, "TTS server", "not installed (spoken replies off). Run: jarvis tts install")
     else:
         add(OK, "TTS server", f"{runtime.python} ({'managed' if runtime.owned else 'external'})")
-        model = os.path.join(ttsinstall.assets_dir(), "models", "tr_finetuned", "model.pth")
-        add(OK if os.path.isfile(model) else WARN, "Custom voice model", "found" if os.path.isfile(model) else f"not found in {ttsinstall.assets_dir()} (default voice is used)")
+        voice = ttsinstall.custom_voice()
+        add(OK if voice else WARN, "Custom voice", voice or f"no .wav in {' or '.join(ttsinstall.voice_folders())} (default voice is used)")
 
     if sys.platform.startswith("linux"):
         player = next((p for p in ("paplay", "aplay", "ffplay") if shutil.which(p)), None)

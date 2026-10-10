@@ -7,14 +7,16 @@ from typing import Callable, NamedTuple
 
 from core import config, paths
 
-BASE_MODEL = "tts_models/multilingual/multi-dataset/xtts_v2"
 PYTHON_VERSION = "3.11"
 MIN_FREE_GB = 8
 INSTALLED_MARKER = os.path.join(paths.TTS_DIR, ".installed")
 DOWNLOAD_NOTICE = (
-    "The voice server needs Python 3.11, PyTorch and the XTTS v2 voice model "
-    "(roughly 3-5 GB of downloads). XTTS v2 is licensed under the Coqui Public Model "
-    "License (non-commercial use only); installing it means you accept that license."
+    "The voice server needs Python 3.11, PyTorch and the Chatterbox Multilingual voice model "
+    "(roughly 3-5 GB of downloads). Chatterbox is open source under the MIT license."
+)
+MODEL_DOWNLOAD = (
+    "from chatterbox.mtl_tts import ChatterboxMultilingualTTS;"
+    "ChatterboxMultilingualTTS.from_pretrained(device='cpu')"
 )
 
 
@@ -45,14 +47,46 @@ def assets_dir() -> str:
     )
 
 
+PACK_LANGS = ("en", "tr")
+
+
+def voice_folders() -> list:
+    return [os.path.join(paths.PERSONAL_DIR, "voices"), os.path.join(assets_dir(), "voices")]
+
+
+def open_voice_folder() -> str:
+    folder = voice_folders()[0]
+    for lang in PACK_LANGS:
+        os.makedirs(os.path.join(folder, lang), exist_ok=True)
+    if paths.IS_MAC:
+        subprocess.run(["open", folder])
+    elif paths.IS_WIN:
+        subprocess.run(["explorer", folder])
+    else:
+        subprocess.run(["xdg-open", folder])
+    return folder
+
+
+def custom_voice() -> str | None:
+    for root in voice_folders():
+        if not os.path.isdir(root):
+            continue
+        for lang in sorted(os.listdir(root)):
+            folder = os.path.join(root, lang)
+            if os.path.isdir(folder) and any(f.lower().endswith(".wav") for f in os.listdir(folder)):
+                return folder
+    return None
+
+
 def server_env(runtime: Runtime) -> dict:
     env = {
         "JARVIS_ASSETS_DIR": assets_dir(),
-        "COQUI_TOS_AGREED": "1",
+        "JARVIS_PERSONAL_DIR": paths.PERSONAL_DIR,
+        "JARVIS_TTS_TOKEN_FILE": paths.TTS_TOKEN_PATH,
         "PYTHONUNBUFFERED": "1",
     }
     if runtime.owned:
-        env["TTS_HOME"] = paths.TTS_HOME
+        env["HF_HOME"] = paths.TTS_HOME
     return env
 
 
@@ -116,12 +150,8 @@ def install(progress: Callable[[str], None]) -> None:
             progress, uv_env,
         )
 
-        progress("Downloading the XTTS v2 voice model...")
-        download = (
-            "from TTS.utils.manage import ModelManager;"
-            f"ModelManager().download_model({BASE_MODEL!r})"
-        )
-        _run([python, "-c", download], progress, server_env(Runtime(python, True)))
+        progress("Downloading the Chatterbox Multilingual voice model...")
+        _run([python, "-c", MODEL_DOWNLOAD], progress, server_env(Runtime(python, True)))
 
         with open(INSTALLED_MARKER, "w", encoding="utf-8") as f:
             f.write(time.strftime("%Y-%m-%d %H:%M:%S"))

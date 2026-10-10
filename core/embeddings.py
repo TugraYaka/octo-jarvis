@@ -2,7 +2,7 @@ import os
 
 from google.genai import types
 
-from core import paths
+from core import config, paths
 from core.client import get_client
 
 DIM = 768
@@ -25,6 +25,8 @@ def _log_failure(text: str, kind: str, error: Exception) -> None:
 
 
 def embed(text: str, kind: str) -> list[float] | None:
+    if not config.get_api_key():
+        return None
     try:
         response = get_client().models.embed_content(
             model=_MODEL,

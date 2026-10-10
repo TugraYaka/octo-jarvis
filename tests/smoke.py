@@ -13,7 +13,7 @@ tmp = tempfile.mkdtemp(prefix="jarvis-smoke-")
 home = os.path.join(tmp, "home")
 data = os.path.join(tmp, "data")
 os.makedirs(home)
-env = dict(os.environ, JARVIS_HOME=data, HOME=home, USERPROFILE=home, SHELL="/bin/sh")
+env = dict(os.environ, JARVIS_HOME=data, HOME=home, USERPROFILE=home, SHELL="/bin/sh", JARVIS_KEYRING="0")
 env.pop("GEMINI_API_KEY", None)
 failures = []
 
@@ -42,7 +42,7 @@ def venv_python():
 
 
 r = jarvis("--version")
-check("version", r.returncode == 0 and re.fullmatch(r"\d+\.\d+\.\d+", r.stdout.strip()) is not None, r.stdout + r.stderr)
+check("version", r.returncode == 0 and re.fullmatch(r"\d+\.\d+\.\d+(-[0-9A-Za-z.]+)?", r.stdout.strip()) is not None, r.stdout + r.stderr)
 
 r = jarvis("doctor")
 check("doctor before setup reports missing environment", r.returncode == 1 and "[FAIL] Environment" in r.stdout, r.stdout + r.stderr)
@@ -60,7 +60,10 @@ check("chat asks for a key and rejects a fake one", r.returncode == 0 and "tui o
 r = run([venv_python(), os.path.join(ROOT, "tests", "unit_smoke.py")], cwd=ROOT)
 check("unit checks", r.returncode == 0, r.stdout + r.stderr)
 
-r = run([venv_python(), "-c", "import core.gemini_client, core.tts, core.stt, core.browser, core.memory"], cwd=ROOT)
+r = run([venv_python(), os.path.join(ROOT, "tests", "tts_auth_smoke.py")], cwd=ROOT)
+check("tts server auth", r.returncode == 0, r.stdout + r.stderr)
+
+r = run([venv_python(), "-c", "import core.llm, core.gemini_client, core.tts, core.stt, core.browser, core.memory"], cwd=ROOT)
 check("core modules import", r.returncode == 0, r.stdout + r.stderr)
 
 src = os.path.join(tmp, "personal_src")
@@ -71,7 +74,7 @@ git = ["git", "-c", "user.name=ci", "-c", "user.email=ci@example.com"]
 run(["git", "init", "-q", src])
 run(git + ["-C", src, "add", "-A"])
 run(git + ["-C", src, "commit", "-qm", "init"])
-r = jarvis("personal", "set", src)
+r = jarvis("personal", "set", src, "--yes")
 check("personal set", r.returncode == 0, r.stdout + r.stderr)
 check("personal persona file present", os.path.isfile(os.path.join(data, "personal", "persona.md")))
 r = jarvis("personal", "remove")

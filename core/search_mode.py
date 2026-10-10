@@ -45,13 +45,13 @@ def get_modes() -> tuple[bool, bool]:
     return state["google"], state["duck"]
 
 
-def set_google_online(online: bool) -> str:
+def set_google_online(online: bool, label: str = "Google search") -> str:
     state = _load()
     if state["google"] == online:
-        return f"Google search already {'online' if online else 'offline'}."
+        return f"{label} already {'online' if online else 'offline'}."
     state["google"] = online
     _save(state)
-    return "Google search online." if online else "Google search offline."
+    return f"{label} {'online' if online else 'offline'}."
 
 
 def set_duck_online(online: bool) -> str:

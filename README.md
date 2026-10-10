@@ -80,7 +80,7 @@ jarvis setup      # guided setup: command, API key, browser, speech model, TTS s
 jarvis doctor     # checks everything and tells you what is wrong and how to fix it
 ```
 
-`jarvis setup` asks before every large download. `jarvis setup --yes` accepts them all except the TTS server, which needs `--with-tts` because it comes with a license (see below). `jarvis doctor` changes nothing.
+`jarvis setup` asks before every large download. `jarvis setup --yes` accepts them all except the TTS server, which needs `--with-tts` because it is a large download (see below). `jarvis doctor` changes nothing.
 
 ## Chat commands
 
@@ -95,6 +95,9 @@ Type `/` to open the command list (arrow keys and Enter to pick).
 | `/onlineduckduck`, `/offlineduckduck` | Enable or disable DuckDuckGo search |
 | `/listmemory`, `/forgetmemory <id>`, `/resetmemory` | Inspect or clear long-term memory |
 | `/resethistory` | Clear the current conversation |
+| `/chats` | Browse and reopen past chats |
+| `/newchat` | Start a new chat |
+| `/deletechat` | Delete the current chat from chat history |
 | `/voice`, `/voiceon`, `/voiceoff` | Show status of, enable or disable spoken replies |
 | `/installtts` | Download and install the TTS server |
 | `/turnontts`, `/turnofftts` | Start or stop the TTS server |
@@ -107,42 +110,40 @@ Only one search engine can be online at a time. Type `exit` to quit.
 
 ## Spoken replies (TTS server)
 
-Spoken replies come from a separate local server (Coqui XTTS v2). It is large, so it is not installed with JARVIS. On first launch, if it is missing, JARVIS tells you what will be downloaded and asks for permission. Nothing is downloaded without your yes. You can also do it later:
+> **Intel Macs:** spoken replies do not work on Intel Macs. Chatterbox pins PyTorch 2.6, which has no build for Intel macOS, so the TTS server cannot be installed there. Everything else in JARVIS works without it.
+
+Spoken replies come from a separate local server ([Chatterbox Multilingual](https://github.com/resemble-ai/chatterbox), MIT license). It is large, so it is not installed with JARVIS. On first launch, if it is missing, JARVIS tells you what will be downloaded and asks for permission. Nothing is downloaded without your yes. You can also do it later:
 
 - in the chat: `/installtts`
 - in a terminal: `jarvis tts install`
 
-The installer downloads a private Python 3.11 runtime, PyTorch (about 3-5 GB in total) and the XTTS v2 base model into JARVIS' data folder. XTTS v2 is published under the [Coqui Public Model License](https://coqui.ai/cpml), which allows non-commercial use only; installing it means you accept that license. Intel Macs are not supported by the pinned PyTorch version.
+The installer downloads a private Python 3.11 runtime, PyTorch and the Chatterbox Multilingual model (about 3-5 GB in total) into JARVIS' data folder. Chatterbox is open source under the MIT license, so there is no non-commercial restriction. It speaks 23 languages: Arabic, Chinese, Danish, Dutch, English, Finnish, French, German, Greek, Hebrew, Hindi, Italian, Japanese, Korean, Malay, Norwegian, Polish, Portuguese, Russian, Spanish, Swahili, Swedish and Turkish. Generated audio carries Resemble AI's inaudible Perth watermark. It uses CUDA, Apple MPS or the CPU automatically (override with `JARVIS_TTS_DEVICE`).
 
 If you already have a compatible environment, set `JARVIS_TTS_PYTHON` to its Python executable and JARVIS uses it instead.
+
+To run the voice server on another machine, start `tts_server/server.py` there with `JARVIS_TTS_HOST=0.0.0.0` (and optionally `JARVIS_TTS_PORT`).
 
 ```bash
 jarvis tts status              # what was found
 jarvis tts uninstall           # remove only the TTS server
 ```
 
-### Voice model (you must add this for a custom voice)
+### Voice pack (you must add this for the JARVIS voice)
 
-Without any model, the server speaks with a built-in default XTTS voice. The custom JARVIS voice comes from model and voice files that are **not part of this repository** (they are listed in `.gitignore`). To use one, put them in an assets folder with this layout:
+Without voice files, the server speaks with Chatterbox's built-in default voice. The JARVIS voice comes from reference clips that are **not part of this repository**. Chatterbox clones the voice from a clip in any of its languages, so one English JARVIS pack is enough for every language. Put the clips in your [personal repository](#personal-repository) (preferred) or in an assets folder:
 
 ```
-<assets folder>/
-  models/
-    tr_finetuned/
-      config.json        XTTS v2 config of the fine-tuned model (XttsConfig JSON)
-      model.pth          fine-tuned XTTS v2 checkpoint
-      vocab.json         XTTS v2 tokenizer vocabulary
-      speaker_ref.wav    clean reference clip (about 6-30 s) of the target voice
+<personal repo or assets folder>/
   voices/
-    en/*.wav             reference clips used for voice cloning in English
-    tr/*.wav             same for Turkish (only used when no tr_finetuned model exists)
+    en/*.wav             main English JARVIS voice, used for every language without its own folder
+    tr/*.wav             optional: a clip for one language only
 ```
 
-What the server looks for:
+Run `/addvoice` in the terminal app to open the personal `voices/` folder with `en/` and `tr/` ready; drop the clips in by hand. Loose `.wav` files directly inside `voices/` are ignored.
 
-- **`models/tr_finetuned/`** must be a Coqui **XTTS v2** GPT fine-tune in the format produced by Coqui's XTTS fine-tuning (`TTS.demos.xtts_ft_demo`): `config.json` + `model.pth` + `vocab.json` + `speaker_ref.wav`. All four files are required; if one is missing the server says which and falls back. It is loaded with `Xtts.init_from_config` / `load_checkpoint`, generates 24 kHz mono audio, and the speaker embedding file (`speakers_xtts.pth`) is taken from the base XTTS v2 model that the installer downloads. It is used for Turkish (`tr`).
-- **`voices/<lang>/*.wav`** are cloning references for the base model, used for any language that has no fine-tuned model.
-- If neither exists, the built-in default speaker is used.
+What the server looks for, per language: `voices/<lang>/`, then `voices/en/`, first in the personal repository and then in the assets folder. The first `.wav` in alphabetical order is used; a clean clip of about 10 seconds works best. If nothing is found, the built-in default voice is used.
+
+Coming from the old XTTS setup: the English clips in `voices/en/` stay the main JARVIS voice as they are. The fine-tuned Turkish model (`models/tr_finetuned/`) is no longer used and can be deleted; Turkish is spoken with the English JARVIS voice.
 
 Tell JARVIS where the assets folder is (the default is `assets/` inside the data folder):
 
@@ -157,8 +158,11 @@ Anything that is yours alone (persona, extra code, extra packages) can live in a
 ```bash
 jarvis personal set git@github.com:YOU/jarvis-personal.git
 jarvis personal pull           # update later
+jarvis personal trust          # review and approve the current version
 jarvis personal remove
 ```
+
+Plugins and packages run code on your machine, and the persona changes how JARVIS behaves, so they only load for a version you approved. `set` and `pull` show which of those files changed and ask first. If the repository is new or changed, `jarvis` asks "Do you trust this computer and this folder?" before it starts; until you approve, it runs without them.
 
 Layout of that repository (all parts are optional):
 
@@ -237,8 +241,15 @@ GitHub Actions runs the smoke test on macOS, Linux and Windows with Python 3.10 
 ## Building the standalone packages
 
 ```bash
-pip install -r requirements.txt pyinstaller
+pip install --require-hashes -r requirements.lock
+pip install pyinstaller
 python packaging/pyinstaller/build.py
+```
+
+Release builds install from `requirements.lock`, which pins every package to an exact version and hash. After changing `requirements.txt`, regenerate it:
+
+```bash
+uv pip compile requirements.txt --universal --generate-hashes --python-version 3.10 -o requirements.lock
 ```
 
 This produces `dist/jarvis-<system>-<cpu>.tar.gz` (`.zip` on Windows) and a `.sha256` file. The `Build` workflow does this on all three systems, tests the result and the installer scripts, and the `Release` workflow attaches them to the release.
@@ -250,7 +261,7 @@ jarvis.py               launcher: setup, doctor, install/uninstall, tts and pers
 jarvis.cmd              Windows shim for running from the source folder
 core/                   Gemini client, memory, search, browser, speech, TTS client, doctor
 terminal/main.py        the chat interface
-tts_server/             local XTTS server and its pinned requirements
+tts_server/             local Chatterbox TTS server and its pinned requirements
 tests/                  smoke tests
 .github/workflows/      CI, Build and Release pipelines
 packaging/homebrew/     Homebrew formula
@@ -260,4 +271,4 @@ install.sh, install.ps1 one-line installers
 
 ## License
 
-MIT, see [LICENSE](LICENSE). The XTTS v2 voice model that the TTS installer downloads is not part of this project and has its own license (Coqui Public Model License, non-commercial use only).
+MIT, see [LICENSE](LICENSE). The Chatterbox model that the TTS installer downloads is not part of this project; it is published by Resemble AI under the MIT license.

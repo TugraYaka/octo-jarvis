@@ -35,7 +35,8 @@ Usage:
   jarvis tts status               show TTS server and voice model status
   jarvis tts assets [folder]      show or set the folder holding voices/ and models/
   jarvis personal set <git-url>   clone your personal repository (persona, plugins, packages)
-  jarvis personal pull            update it
+  jarvis personal pull            update it (shows what changed and asks first)
+  jarvis personal trust           review and approve the current version
   jarvis personal remove          remove it
   jarvis personal status          show it
   jarvis --version
@@ -121,7 +122,35 @@ def ensure_env():
     return py
 
 
+def review_personal_trust():
+    """Before launch, ask once whether to trust a personal repository that is new or changed."""
+    if not personal.is_installed() or personal.is_trusted() or not sys.stdin.isatty():
+        return
+
+    def confirm(summary):
+        say()
+        say("Do you trust this computer and this folder?")
+        say()
+        say("  Folder: %s" % paths.PERSONAL_DIR)
+        say("  Source: %s" % (personal.repo_url() or "unknown"))
+        say()
+        say("JARVIS found a personal repository you have not approved yet (new or changed).")
+        say("Its plugins and packages run as code on this computer, and its persona changes")
+        say("how JARVIS behaves. Only trust it if you know where it came from.")
+        say()
+        say(summary)
+        say()
+        try:
+            return input("Trust this folder? [y/N] ").strip().lower() in ("y", "yes")
+        except (EOFError, KeyboardInterrupt):
+            say()
+            return False
+
+    say(personal.trust(confirm))
+
+
 def run_app(args):
+    review_personal_trust()
     if FROZEN:
         from terminal import main as app
 
@@ -359,22 +388,38 @@ def cmd_tts(args):
         else:
             say("TTS server: %s (%s)" % (runtime.python, "managed by JARVIS" if runtime.owned else "external"))
         assets = ttsinstall.assets_dir()
-        model = os.path.join(assets, "models", "tr_finetuned", "model.pth")
+        voice = ttsinstall.custom_voice()
         say("Assets folder: %s" % assets)
-        say("Custom voice model: %s" % ("found" if os.path.isfile(model) else "not found (default voice will be used)"))
+        say("Custom voice: %s" % (voice or "not found (default voice will be used)"))
         return
     fail(HELP)
 
 
 def cmd_personal(args):
+    auto = "--yes" in args
+    args = [a for a in args if a != "--yes"]
     action = args[0] if args else "status"
+
+    def confirm(summary):
+        say("These files can run code or change how JARVIS behaves:")
+        say(summary)
+        if auto:
+            return True
+        try:
+            return input("Approve them? [y/N] ").strip().lower() in ("y", "yes")
+        except (EOFError, KeyboardInterrupt):
+            say()
+            return False
+
     try:
         if action == "set":
             if len(args) < 2:
-                fail("Usage: jarvis personal set <git-url>")
-            say(personal.set_repo(args[1]))
+                fail("Usage: jarvis personal set <git-url> [--yes]")
+            say(personal.set_repo(args[1], confirm))
         elif action == "pull":
-            say(personal.pull())
+            say(personal.pull(confirm))
+        elif action == "trust":
+            say(personal.trust(confirm))
         elif action == "remove":
             say(personal.remove())
         elif action == "status":
@@ -484,13 +529,13 @@ def cmd_setup(args):
     else:
         say("      " + ttsinstall.DOWNLOAD_NOTICE)
         if auto and "--with-tts" not in args:
-            say("      Skipped. Add --with-tts to accept the license and install it unattended.")
+            say("      Skipped. Add --with-tts to install it unattended.")
         elif (auto or confirm("      Download and install the TTS server now?")):
             if subprocess.call([py, *paths.python_c_args(TTS_INSTALL_CODE)], cwd=ROOT) != 0:
                 say("      TTS install failed. Run it again later with: jarvis tts install")
-    model = os.path.join(ttsinstall.assets_dir(), "models", "tr_finetuned", "model.pth")
-    if not auto and not os.path.isfile(model):
-        folder = _ask_text("      Folder with your own voice model (Enter to skip): ")
+    voice = ttsinstall.custom_voice()
+    if not auto and not voice:
+        folder = _ask_text("      Folder with your own voice files (Enter to skip): ")
         if folder:
             folder = os.path.abspath(os.path.expanduser(folder))
             if os.path.isdir(folder):

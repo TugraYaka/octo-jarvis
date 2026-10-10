@@ -15,7 +15,7 @@ IS_WIN = sys.platform == "win32"
 COLLECT_ALL = [
     "playwright", "textual", "faster_whisper", "ctranslate2", "onnxruntime", "av",
     "sounddevice", "_sounddevice_data", "uv", "ddgs", "primp", "lxml", "tokenizers",
-    "huggingface_hub", "certifi", "google.genai", "rich",
+    "huggingface_hub", "certifi", "google.genai", "rich", "keyring", "jaraco",
 ]
 
 

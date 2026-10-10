@@ -5,7 +5,7 @@ updates:
     schedule:
       interval: weekly
     ignore:
-      # The TTS server (tts_server/requirements.txt) works only with transformers 4.x and the torch range coqui-tts supports.
+      # The TTS server (tts_server/requirements.txt) pins torch/transformers through chatterbox-tts.
       - dependency-name: torch
         update-types: ["version-update:semver-major"]
       - dependency-name: torchaudio

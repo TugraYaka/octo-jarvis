@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -28,6 +29,8 @@ _DUPLICATE_SIMILARITY = 0.93
 _RETRIEVAL_TOP_K = 5
 _RETRIEVAL_MIN_SCORE = 0.65
 _RECENCY_HALFLIFE_DAYS = 180
+_LEXICAL_MIN_SCORE = 0.25
+_WORD_RE = re.compile(r"\w{3,}")
 
 # Every mutation (append/replace, reset, forget) goes through this single
 # worker so operations are strictly ordered — e.g. /resetmemory can never be
@@ -109,6 +112,24 @@ def _score(query_embedding: list[float], entry: dict) -> float:
         return 0.0
 
 
+def _words(text: str) -> set[str]:
+    return set(_WORD_RE.findall(text.lower()))
+
+
+def _lexical_score(query_words: set[str], entry: dict) -> float:
+    entry_words = _words(entry["text"])
+    if not query_words or not entry_words:
+        return 0.0
+    return len(query_words & entry_words) / (len(query_words) * len(entry_words)) ** 0.5
+
+
+def _match_score(query_embedding: list[float] | None, query_words: set[str], entry: dict) -> float:
+    entry_embedding = entry.get("embedding")
+    if query_embedding and entry_embedding and len(entry_embedding) == len(query_embedding):
+        return _score(query_embedding, entry)
+    return _lexical_score(query_words, entry)
+
+
 def _recency_weight(entry: dict) -> float:
     ts = entry.get("ts")
     if not isinstance(ts, (int, float)):
@@ -117,11 +138,11 @@ def _recency_weight(entry: dict) -> float:
     return 0.5 ** (age_days / _RECENCY_HALFLIFE_DAYS)
 
 
-def _ranked_score(query_embedding: list[float], entry: dict) -> float:
+def _ranked_score(query_embedding: list[float] | None, query_words: set[str], entry: dict) -> float:
     # Mild recency nudge so a stale fact that contradicts a newer one (but
     # wasn't explicitly flagged as a replacement) doesn't permanently
     # outrank it just because its wording happens to match better.
-    return _score(query_embedding, entry) * (0.85 + 0.15 * _recency_weight(entry))
+    return _match_score(query_embedding, query_words, entry) * (0.85 + 0.15 * _recency_weight(entry))
 
 
 def _preserve_unreadable() -> None:
@@ -157,7 +178,7 @@ def _load_entries() -> list[dict]:
 def _save_entries(entries: list[dict]) -> None:
     os.makedirs(os.path.dirname(MEMORY_PATH), exist_ok=True)
     tmp_path = f"{MEMORY_PATH}.tmp"
-    with open(tmp_path, "w", encoding="utf-8") as f:
+    with paths.open_private(tmp_path) as f:
         json.dump(entries, f, ensure_ascii=False, indent=2)
     os.replace(tmp_path, MEMORY_PATH)
 
@@ -177,8 +198,7 @@ def _do_remember(text: str, replace_id: int | None) -> None:
         # process isn't blocked during the network call.
         embedding = embed(text, "document")
         if embedding is None:
-            _log(f"[memory] fact not saved (embedding failed): {text[:80]!r}")
-            return
+            _log(f"[memory] saving without embedding, keyword search only: {text[:80]!r}")
 
         with _locked():
             entries = _load_entries()
@@ -195,7 +215,7 @@ def _do_remember(text: str, replace_id: int | None) -> None:
 
             if any(e["text"] == text for e in entries):
                 return
-            if any(_score(embedding, e) >= _DUPLICATE_SIMILARITY for e in entries):
+            if embedding and any(_score(embedding, e) >= _DUPLICATE_SIMILARITY for e in entries):
                 return
 
             entries.append({
@@ -272,13 +292,17 @@ def search_memory(query: str, top_k: int = _RETRIEVAL_TOP_K) -> list[dict]:
         return []
 
     embedding = embed(query, "query")
-    if embedding is None:
-        _log("[memory] search skipped (embedding failed)")
-        return []
-
-    scored = sorted(entries, key=lambda e: _ranked_score(embedding, e), reverse=True)
+    words = _words(query)
+    scored = sorted(entries, key=lambda e: _ranked_score(embedding, words, e), reverse=True)
     return [
         {"id": e.get("id"), "text": e["text"]}
         for e in scored[:top_k]
-        if _score(embedding, e) >= _RETRIEVAL_MIN_SCORE
+        if _is_relevant(embedding, words, e)
     ]
+
+
+def _is_relevant(query_embedding: list[float] | None, query_words: set[str], entry: dict) -> bool:
+    entry_embedding = entry.get("embedding")
+    if query_embedding and entry_embedding and len(entry_embedding) == len(query_embedding):
+        return _score(query_embedding, entry) >= _RETRIEVAL_MIN_SCORE
+    return _lexical_score(query_words, entry) >= _LEXICAL_MIN_SCORE

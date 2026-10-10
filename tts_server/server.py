@@ -1,110 +1,85 @@
+import hmac
 import json
 import os
+import secrets
 import sys
 import tempfile
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-os.environ.setdefault("COQUI_TOS_AGREED", "1")
+import soundfile
+import torch
+from chatterbox.mtl_tts import SUPPORTED_LANGUAGES, ChatterboxMultilingualTTS
 
-from TTS.api import TTS
-from TTS.tts.configs.xtts_config import XttsConfig
-from TTS.tts.models.xtts import Xtts
-from TTS.utils.manage import ModelManager
-
-PORT = 8765
+HOST = os.environ.get("JARVIS_TTS_HOST", "127.0.0.1")
+PORT = int(os.environ.get("JARVIS_TTS_PORT", "8765"))
 SERVICE_ID = "jarvis-tts"
-BASE_MODEL = "tts_models/multilingual/multi-dataset/xtts_v2"
-DEFAULT_SPEAKER = "Ana Florence"
-TR_SPEED = 1.25
-SUPPORTED_LANGS = frozenset(
-    ["en", "es", "fr", "de", "it", "pt", "pl", "tr", "ru", "nl", "cs", "ar", "zh-cn", "hu", "ko", "ja", "hi"]
-)
+MAX_BODY_BYTES = 64 * 1024
+LOOPBACK_HOSTS = ("127.0.0.1", "localhost", "::1")
+FALLBACK_LANG = "en"
+SUPPORTED_LANGS = frozenset(SUPPORTED_LANGUAGES)
 
 ASSETS_DIR = os.environ.get("JARVIS_ASSETS_DIR") or os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "assets"
 )
-VOICES_DIR = os.path.join(ASSETS_DIR, "voices")
-TR_MODEL_DIR = os.path.join(ASSETS_DIR, "models", "tr_finetuned")
-TR_CONFIG = os.path.join(TR_MODEL_DIR, "config.json")
-TR_CHECKPOINT = os.path.join(TR_MODEL_DIR, "model.pth")
-TR_VOCAB = os.path.join(TR_MODEL_DIR, "vocab.json")
-TR_SPEAKER_REF = os.path.join(TR_MODEL_DIR, "speaker_ref.wav")
-
-print(f"Assets folder: {ASSETS_DIR}")
-
-base_model_dir, _, _ = ModelManager().download_model(BASE_MODEL)
-base_tts = None
+PERSONAL_DIR = os.environ.get("JARVIS_PERSONAL_DIR", "")
+VOICE_ROOTS = [
+    os.path.join(root, "voices") for root in (PERSONAL_DIR, ASSETS_DIR) if root
+]
 
 
-def get_base_tts():
-    global base_tts
-    if base_tts is None:
-        base_tts = TTS(BASE_MODEL)
-    return base_tts
+def pick_device():
+    override = os.environ.get("JARVIS_TTS_DEVICE")
+    if override:
+        return override
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
 
 
-tr_model = None
-TR_LATENTS = None
-if os.path.exists(TR_CHECKPOINT):
-    missing = [p for p in (TR_CONFIG, TR_VOCAB, TR_SPEAKER_REF) if not os.path.exists(p)]
-    if missing:
-        print(f"Fine-tuned Turkish model found but incomplete, missing: {', '.join(missing)}")
-    else:
-        print("Loading fine-tuned Turkish XTTS model...")
-        tr_config = XttsConfig()
-        tr_config.load_json(TR_CONFIG)
-        tr_model = Xtts.init_from_config(tr_config)
-        tr_model.load_checkpoint(
-            tr_config,
-            checkpoint_path=TR_CHECKPOINT,
-            vocab_path=TR_VOCAB,
-            speaker_file_path=os.path.join(base_model_dir, "speakers_xtts.pth"),
-            use_deepspeed=False,
-        )
-        tr_model.eval()
-        TR_LATENTS = tr_model.get_conditioning_latents(audio_path=[TR_SPEAKER_REF])
-        print("Fine-tuned Turkish model loaded.")
-else:
-    print(f"No fine-tuned Turkish model at {TR_MODEL_DIR}; using the voice files or the default voice.")
-
-print("Model loading complete. Server ready.")
-
-
-def reference_voices(lang):
-    if not os.path.isdir(VOICES_DIR):
-        return []
-    match = [n for n in os.listdir(VOICES_DIR) if n == lang]
-    if not match:
-        return []
-    lang_dir = os.path.join(VOICES_DIR, match[0])
-    if not os.path.isdir(lang_dir):
+def wavs_in(folder):
+    if not os.path.isdir(folder):
         return []
     return sorted(
-        os.path.join(lang_dir, f) for f in os.listdir(lang_dir) if f.lower().endswith(".wav")
+        os.path.join(folder, f) for f in os.listdir(folder) if f.lower().endswith(".wav")
     )
 
 
-def default_speaker(tts):
-    names = list(tts.synthesizer.tts_model.speaker_manager.speakers.keys())
-    return DEFAULT_SPEAKER if DEFAULT_SPEAKER in names else names[0]
+def reference_voice(lang):
+    for root in VOICE_ROOTS:
+        if not os.path.isdir(root):
+            continue
+        names = os.listdir(root)
+        for wanted in (lang, FALLBACK_LANG):
+            match = [n for n in names if n == wanted]
+            if match:
+                found = wavs_in(os.path.join(root, match[0]))
+                if found:
+                    return found[0]
+    return None
+
+
+DEVICE = pick_device()
+print(f"Voice folders: {', '.join(VOICE_ROOTS)}")
+print(f"Loading Chatterbox Multilingual on {DEVICE}...")
+model = ChatterboxMultilingualTTS.from_pretrained(device=DEVICE)
+print("Model loading complete. Server ready.")
+
+_lock = threading.Lock()
+_current_ref = None
 
 
 def synthesize(text, lang, out_path):
-    if lang == "tr" and tr_model is not None:
-        import torch
-        import torchaudio
-
-        gpt_cond_latent, speaker_embedding = TR_LATENTS
-        out = tr_model.inference(text, "tr", gpt_cond_latent, speaker_embedding, speed=TR_SPEED)
-        torchaudio.save(out_path, torch.tensor(out["wav"]).unsqueeze(0), 24000)
-        return
-
-    tts = get_base_tts()
-    voices = reference_voices(lang)
-    if voices:
-        tts.tts_to_file(text=text, speaker_wav=voices, language=lang, file_path=out_path)
-        return
-    tts.tts_to_file(text=text, speaker=default_speaker(tts), language=lang, file_path=out_path)
+    global _current_ref
+    ref = reference_voice(lang)
+    with _lock:
+        if ref and ref != _current_ref:
+            model.prepare_conditionals(ref)
+            _current_ref = ref
+        wav = model.generate(text, language_id=lang)
+    soundfile.write(out_path, wav.squeeze(0).numpy(), model.sr, subtype="PCM_16")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -115,15 +90,35 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _host_allowed(self):
+        if HOST not in LOOPBACK_HOSTS:
+            return True
+        host = (self.headers.get("Host") or "").strip().lower()
+        return host in {f"127.0.0.1:{PORT}", f"localhost:{PORT}", f"[::1]:{PORT}"}
+
     def do_GET(self):
-        self._reply(200, json.dumps({"service": SERVICE_ID}).encode(), "application/json")
+        if not self._host_allowed():
+            self._reply(403, b"Forbidden")
+            return
+        body = {"service": SERVICE_ID, "languages": sorted(SUPPORTED_LANGS)}
+        self._reply(200, json.dumps(body).encode(), "application/json")
 
     def do_POST(self):
+        token = (self.headers.get("X-JARVIS-Token") or "").encode()
+        if not self._host_allowed() or not hmac.compare_digest(token, TOKEN.encode()):
+            self._reply(403, b"Forbidden")
+            return
+        if not (self.headers.get("Content-Type") or "").lower().startswith("application/json"):
+            self._reply(415, b"Content-Type must be application/json")
+            return
         try:
             length = int(self.headers.get("Content-Length", 0))
+            if length <= 0 or length > MAX_BODY_BYTES:
+                self._reply(413, b"Request body too large or empty")
+                return
             body = json.loads(self.rfile.read(length))
             text = body["text"]
-            lang = body.get("lang", "en")
+            lang = body.get("lang", FALLBACK_LANG)
             if not isinstance(text, str) or not text.strip():
                 raise ValueError("text must be a non-empty string")
             if lang not in SUPPORTED_LANGS:
@@ -150,6 +145,22 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+def load_token():
+    path = os.environ.get("JARVIS_TTS_TOKEN_FILE", "")
+    try:
+        with open(path, encoding="utf-8") as f:
+            token = f.read().strip()
+        if token:
+            return token
+    except OSError:
+        pass
+    print("No JARVIS_TTS_TOKEN_FILE set; synthesis requests will be refused.", file=sys.stderr)
+    return secrets.token_urlsafe(32)
+
+
+TOKEN = load_token()
+
+
 if __name__ == "__main__":
-    print(f"Listening on http://127.0.0.1:{PORT}")
-    HTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    print(f"Listening on http://{HOST}:{PORT}")
+    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()

@@ -10,3 +10,4 @@ textual>=8.2.8,<9
 rich
 tqdm
 uv>=0.12.23
+keyring>=25,<26

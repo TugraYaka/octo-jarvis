@@ -19,8 +19,6 @@ browser_profile/
 voices/
 models/
 assets/
-tr_finetuned/
-finetune_out/
 *.pth
 *.wav
 
