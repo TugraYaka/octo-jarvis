@@ -4,8 +4,8 @@ from core.memory import full_memory, queue_remember, search_memory
 
 INSTRUCTION = (
     "Memory: you have a long-term memory of facts about the user, built up across past "
-    "conversations. The facts relevant to the current message, if any, are shown below "
-    "under 'Relevant memory' as '[id=N] fact' — only what matched this topic is shown, "
+    "conversations. The facts relevant to the current message, if any, are attached to "
+    "that message under 'Relevant memory' as '[id=N] fact' — only what matched this topic is shown, "
     "not your whole memory. Use it to personalize your answer. When the user shares a "
     "new durable fact about themselves (name, preference, recurring habit, important "
     "context) that isn't already shown in memory, save it by including a tag anywhere "

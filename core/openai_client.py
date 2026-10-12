@@ -99,6 +99,19 @@ def _effort() -> str:
     return "high" if assistant.get_thinking_level() == "high" else "low"
 
 
+def complete(system: str, prompt: str, provider: str = "openai") -> str:
+    base_url, model, _ = _settings(provider)
+    official = _official(base_url)
+    payload = {
+        "model": model,
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": prompt}],
+        "max_completion_tokens" if official else "max_tokens": 4000,
+    }
+    if official:
+        payload["reasoning_effort"] = "low"
+    return (_message(_post(provider, base_url, payload)).get("content") or "").strip()
+
+
 def _ask_native_search(provider: str, base_url: str, model: str, system: str, history: list,
                        prompt: str, budget: int, on_status=None) -> str:
     """ChatGPT's own web search only exists on the Responses API."""
@@ -131,12 +144,13 @@ def ask_once(prompt: str, history: list, on_status=None, provider: str = "openai
 
     base_url, model, _ = _settings(provider)
     official = _official(base_url)
-    system = assistant.build_system_instruction(provider, prompt, model, native_on, duck_on, on_status=on_status)
+    system, memory = assistant.build_system_instruction(provider, prompt, model, native_on, duck_on, on_status=on_status)
+    prompt_with_memory = assistant.with_memory(prompt, memory)
     budget = 16000 if assistant.get_thinking_level() == "high" else 4000
 
     if native_on and official:
         state = assistant.new_state()
-        text = _ask_native_search(provider, base_url, model, system, history, prompt, budget, on_status)
+        text = _ask_native_search(provider, base_url, model, system, history, prompt_with_memory, budget, on_status)
         reply = assistant.collect_text(text, state)
         assistant.finish_turn(state)
         if not state["emitted"]:
@@ -147,7 +161,7 @@ def ask_once(prompt: str, history: list, on_status=None, provider: str = "openai
         "model": model,
         "messages": [{"role": "system", "content": system}] + [
             {"role": turn["role"], "content": turn["text"]} for turn in history
-        ] + [{"role": "user", "content": prompt}],
+        ] + [{"role": "user", "content": prompt_with_memory}],
         "max_completion_tokens" if official else "max_tokens": budget,
     }
     if official:

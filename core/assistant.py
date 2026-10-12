@@ -208,8 +208,21 @@ MAX_SEARCH_HOPS = 3
 # Bounds how much conversation history gets resent (and billed) on every
 # turn: by turn count, and separately by total character count so a single
 # very long message can't blow up the resent context even within 8 turns.
+# Turns past the limits are condensed into a running summary instead of lost.
 _MAX_HISTORY_TURNS = 8
 _MAX_HISTORY_CHARS = 6000
+_SUMMARY_INPUT_CHARS = 24000
+_MAX_SUMMARY_CHARS = 2000
+SUMMARY_HEADER = (
+    "Summary of the earlier part of this conversation (older messages were condensed "
+    "to save context):\n"
+)
+SUMMARY_SYSTEM = (
+    "You condense chat history. Summarize the conversation below between a user and "
+    "their assistant JARVIS in at most 200 words. Keep facts, decisions, open tasks, "
+    "names, numbers and anything a later reply may need; drop small talk and greetings. "
+    "If a previous summary is given, merge it in. Reply with the summary only."
+)
 _LANG_RE = re.compile(r"<lang>\s*([A-Za-z-]{2,8})\s*</lang>")
 _LANG_TAIL_RE = re.compile(r"<lang(?:>[^<>]{0,12}(?:</?[a-z]{0,4})?)?\s*$")
 _last_reply_lang = None
@@ -316,7 +329,7 @@ def search_mode_error(provider: str, native_on: bool, duck_on: bool) -> str | No
 
 def build_system_instruction(
     provider: str, prompt: str, model: str, native_on: bool, duck_on: bool, on_status=None
-) -> str:
+) -> tuple[str, str]:
     _turn.pasted = looks_pasted(prompt)
     remember_urls(prompt)
     model_label = config.PROVIDERS[provider]["label"]
@@ -330,7 +343,6 @@ def build_system_instruction(
     persona = personal.persona_text()
     if persona:
         system_instruction += f"\n\nPersonal notes about the user and how to behave:\n{persona}"
-    system_instruction += memory
     if native_on and provider == "gemini":
         system_instruction += GOOGLE_SEARCH_NOTICE
         record_involved_request()
@@ -342,25 +354,72 @@ def build_system_instruction(
         system_instruction += LOCAL_SEARCH_NOTICE
     else:
         system_instruction += NO_INTERNET_NOTICE
-    return system_instruction
+    return system_instruction, memory
 
 
-def trim_history(history: list) -> list:
-    history = history[-(_MAX_HISTORY_TURNS * 2):]
-    total = sum(len(turn["text"]) for turn in history)
-    while len(history) > 2 and total > _MAX_HISTORY_CHARS:
-        dropped_pair, history = history[:2], history[2:]
-        total -= sum(len(turn["text"]) for turn in dropped_pair)
-    return history
+def with_memory(prompt: str, memory: str) -> str:
+    # Memory changes per message, so it rides on the current message instead of the
+    # system prompt; that keeps the system prompt and history a stable, cacheable prefix.
+    if not memory:
+        return prompt
+    return f"{memory.strip()}\n\nUser message:\n{prompt}"
+
+
+def _keep_recent(turns: list, max_turns: int, max_chars: int) -> list:
+    turns = turns[-(max_turns * 2):]
+    total = sum(len(turn["text"]) for turn in turns)
+    while len(turns) > 2 and total > max_chars:
+        total -= sum(len(turn["text"]) for turn in turns[:2])
+        turns = turns[2:]
+    return turns
+
+
+def _split_summary(history: list) -> tuple[str, list]:
+    if len(history) >= 2 and history[0].get("summary"):
+        return history[0]["summary"], history[2:]
+    return "", history
+
+
+def _summary_turns(summary: str) -> list:
+    if not summary:
+        return []
+    summary = summary[:_MAX_SUMMARY_CHARS]
+    return [
+        {"role": "user", "text": SUMMARY_HEADER + summary, "summary": summary},
+        {"role": "assistant", "text": "Understood."},
+    ]
+
+
+def summary_request(summary: str, turns: list) -> str:
+    transcript = "\n\n".join(
+        f"{'User' if turn['role'] == 'user' else 'JARVIS'}: {turn['text']}" for turn in turns
+    )[-_SUMMARY_INPUT_CHARS:]
+    previous = f"Previous summary:\n{summary}\n\n" if summary else ""
+    return f"{previous}Conversation to add:\n{transcript}"
+
+
+def compact_history(history: list, summarize=None) -> list:
+    summary, turns = _split_summary(history)
+    if len(_keep_recent(turns, _MAX_HISTORY_TURNS, _MAX_HISTORY_CHARS)) == len(turns):
+        return history
+    # Compact to half the limits so a summary call is needed every few turns, not every turn.
+    kept = _keep_recent(turns, _MAX_HISTORY_TURNS // 2, _MAX_HISTORY_CHARS // 2)
+    dropped = turns[:len(turns) - len(kept)]
+    if summarize:
+        try:
+            summary = summarize(summary_request(summary, dropped)) or summary
+        except Exception as e:
+            log(f"[history] summary failed, dropping {len(dropped)} turns: {type(e).__name__}: {e}")
+    return _summary_turns(summary) + kept
 
 
 def append_exchange(history: list, prompt: str, reply: str) -> list:
     # Only the clean (prompt, reply) pair joins the persisted history — tool-call
     # scratch content is not kept, so search hops don't bloat every future turn.
-    return trim_history(history + [
+    return history + [
         {"role": "user", "text": prompt},
         {"role": "assistant", "text": reply},
-    ])
+    ]
 
 
 def log(message: str) -> None:

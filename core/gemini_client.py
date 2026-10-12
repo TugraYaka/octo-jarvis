@@ -42,7 +42,7 @@ def _thinking_config() -> types.ThinkingConfig:
 
 def _build_config(
     prompt: str, google_on: bool, duck_on: bool, on_status=None
-) -> types.GenerateContentConfig:
+) -> tuple[types.GenerateContentConfig, str]:
     kwargs = dict(
         automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         thinking_config=_thinking_config(),
@@ -52,10 +52,23 @@ def _build_config(
         kwargs["tools"] = [types.Tool(google_search=types.GoogleSearch())]
     elif duck_on:
         kwargs["tools"] = [_WEB_SEARCH_TOOL]
-    kwargs["system_instruction"] = assistant.build_system_instruction(
+    kwargs["system_instruction"], memory = assistant.build_system_instruction(
         "gemini", prompt, _model(), google_on, duck_on, on_status=on_status
     )
-    return types.GenerateContentConfig(**kwargs)
+    return types.GenerateContentConfig(**kwargs), memory
+
+
+def complete(system: str, prompt: str) -> str:
+    response = get_client().models.generate_content(
+        model=_model(),
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=system,
+            thinking_config=types.ThinkingConfig(thinking_level="minimal"),
+            max_output_tokens=1000,
+        ),
+    )
+    return (response.text or "").strip()
 
 
 def _to_contents(history: list) -> list:
@@ -149,8 +162,10 @@ def ask_once(prompt: str, history: list, on_status=None) -> tuple[str, list]:
     if error:
         return error, history
 
-    config = _build_config(prompt, google_on, duck_on, on_status=on_status)
-    contents = _to_contents(history) + [types.Content(role="user", parts=[types.Part(text=prompt)])]
+    config, memory = _build_config(prompt, google_on, duck_on, on_status=on_status)
+    contents = _to_contents(history) + [
+        types.Content(role="user", parts=[types.Part(text=assistant.with_memory(prompt, memory))])
+    ]
     state = assistant.new_state()
     reply = ""
 

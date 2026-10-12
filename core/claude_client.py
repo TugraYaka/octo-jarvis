@@ -6,6 +6,8 @@ from core.client import MissingKeyError, ProviderHTTPError, rest_get, rest_post
 from core.search_mode import get_modes
 
 _API_VERSION = "2023-06-01"
+_SUMMARY_MODEL = "claude-haiku-5-5"
+_CACHE = {"type": "ephemeral"}
 
 
 def _headers() -> dict:
@@ -80,6 +82,24 @@ def _report_native_searches(blocks: list, on_status=None) -> None:
             assistant.search_status("web_search", {"query": query}, on_status)
 
 
+def _history_messages(history: list) -> list:
+    messages = [{"role": turn["role"], "content": turn["text"]} for turn in history]
+    if messages:
+        messages[-1]["content"] = [{"type": "text", "text": messages[-1]["content"], "cache_control": _CACHE}]
+    return messages
+
+
+def complete(system: str, prompt: str) -> str:
+    official = config.provider_base_url("claude") == config.PROVIDERS["claude"]["base_url"]
+    response = _post({
+        "model": _SUMMARY_MODEL if official else config.provider_model("claude"),
+        "max_tokens": 1000,
+        "system": system,
+        "messages": [{"role": "user", "content": prompt}],
+    })
+    return _text(response.get("content") or []).strip()
+
+
 def ask_once(prompt: str, history: list, on_status=None) -> tuple[str, list]:
     native_on, duck_on = get_modes()
     error = assistant.search_mode_error("claude", native_on, duck_on)
@@ -88,15 +108,16 @@ def ask_once(prompt: str, history: list, on_status=None) -> tuple[str, list]:
 
     model = config.provider_model("claude")
     high = assistant.get_thinking_level() == "high" or not thinking_supported(model)
+    system, memory = assistant.build_system_instruction(
+        "claude", prompt, model, native_on, duck_on, on_status=on_status
+    )
     payload = {
         "model": model,
         "max_tokens": 16000 if high else 4000,
-        "system": assistant.build_system_instruction(
-            "claude", prompt, model, native_on, duck_on, on_status=on_status
-        ),
-        "messages": [
-            {"role": turn["role"], "content": turn["text"]} for turn in history
-        ] + [{"role": "user", "content": prompt}],
+        "system": [{"type": "text", "text": system, "cache_control": _CACHE}],
+        "messages": _history_messages(history) + [
+            {"role": "user", "content": assistant.with_memory(prompt, memory)}
+        ],
     }
     if thinking_supported(model) and model not in _no_effort_models:
         payload["output_config"] = {"effort": "high" if high else "low"}

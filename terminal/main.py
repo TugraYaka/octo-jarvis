@@ -33,7 +33,7 @@ from textual.widgets.option_list import Option
 from core import stt
 from core import tts
 from core import llm
-from core.llm import ask, get_reply_lang, get_thinking_level, is_auth_error, set_thinking_level, validate_key, warmup
+from core.llm import ask, compact_history, get_reply_lang, get_thinking_level, is_auth_error, set_thinking_level, validate_key, warmup
 from core.memory import reset_memory, list_memory, forget_memory
 from core.search_mode import set_google_online, set_duck_online, is_google_online, is_duck_online
 from core.stt import listen, listen_stream
@@ -993,9 +993,9 @@ class JarvisApp(App):
             log.write(f"[dim]✳ {stamp}[/dim]")
             log.write("")
         self._chat_id = chat_id
-        self.history = assistant.trim_history(
-            [{"role": m["role"], "text": m["text"]} for m in chat["messages"] if m.get("role") and "text" in m]
-        )
+        self.history = [
+            {"role": m["role"], "text": m["text"]} for m in chat["messages"] if m.get("role") and "text" in m
+        ]
 
     def _start_new_chat(self) -> None:
         self._chat_id = chats.new_id()
@@ -1442,6 +1442,11 @@ class JarvisApp(App):
         finally:
             self._ask_lock.release()
 
+    def _compact_history(self, chat_id: str) -> None:
+        compacted = compact_history(self.history)
+        if self._chat_id == chat_id:
+            self.history = compacted
+
     def _ask_and_reply_locked(self, prompt: str) -> None:
         log = self.query_one("#log", RichLog)
         if tts.voice_enabled and not tts.server_disabled:
@@ -1475,6 +1480,7 @@ class JarvisApp(App):
             self.call_from_thread(self._write_status, message)
 
         try:
+            self._compact_history(chat_id)
             reply, history = ask(prompt, self.history, on_status=on_status)
             if self._chat_id == chat_id:
                 self.history = history
@@ -1497,6 +1503,8 @@ class JarvisApp(App):
                 self.query_one("#log", RichLog).write,
                 f"[red]TTS error ({escape(str(e))}). See debug.log[/red]",
             )
+        if not is_notice:
+            self._compact_history(chat_id)
 
 
 def main() -> None:

@@ -34,6 +34,19 @@ def _ask_once(name: str, prompt: str, history: list, on_status=None) -> tuple[st
     return openai_client.ask_once(prompt, history, on_status=on_status, provider=name)
 
 
+def summarize(request: str) -> str:
+    name = provider()
+    if name == "gemini":
+        return gemini_client.complete(assistant.SUMMARY_SYSTEM, request)
+    if name == "claude":
+        return claude_client.complete(assistant.SUMMARY_SYSTEM, request)
+    return openai_client.complete(assistant.SUMMARY_SYSTEM, request, provider=name)
+
+
+def compact_history(history: list) -> list:
+    return assistant.compact_history(history, summarize)
+
+
 def is_auth_error(exc: BaseException) -> bool:
     return _is_gemini_auth_error(exc) or is_provider_auth_error(exc)
 
